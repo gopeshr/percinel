@@ -112,6 +112,15 @@ private sealed interface WlScreen {
     data class MarkWatched(val id: Long) : WlScreen
 }
 
+private sealed interface StScreen {
+    data object Home : StScreen
+    data class Listing(val filter: StatFilter) : StScreen
+    data class Entry(val id: Long) : StScreen
+    data class About(val id: Long) : StScreen
+    data class Edit(val id: Long) : StScreen
+    data class Match(val id: Long) : StScreen
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun App() {
@@ -149,7 +158,7 @@ fun App() {
         },
     ) {
         when (section) {
-            Section.STATS -> StatsScreen(repo = repo, onMenu = { openDrawer() })
+            Section.STATS -> StatsFlow(repo = repo, scope = scope, onMenu = { openDrawer() })
             Section.PROFILE -> ProfileScreen(repo = repo, onMenu = { openDrawer() })
             Section.SETTINGS -> SettingsScreen(repo = repo, onMenu = { openDrawer() })
             Section.WATCHLIST -> WatchlistFlow(repo = repo, scope = scope, onMenu = { openDrawer() })
@@ -336,6 +345,73 @@ private fun WatchlistFlow(
             repo = repo,
             id = w.id,
             onDone = { wscreen = WlScreen.List },
+        )
+    }
+}
+
+@Composable
+private fun StatsFlow(
+    repo: Repo,
+    scope: kotlinx.coroutines.CoroutineScope,
+    onMenu: () -> Unit,
+) {
+    var st by remember { mutableStateOf<StScreen>(StScreen.Home) }
+    var all by remember { mutableStateOf<List<Entry>?>(null) }
+    // Where an opened entry should return to (a listing, or the stats home for highlights).
+    var entryReturn by remember { mutableStateOf<StScreen>(StScreen.Home) }
+
+    LaunchedEffect(st) {
+        if (st is StScreen.Home || st is StScreen.Listing) {
+            all = withContext(Dispatchers.IO) { repo.list() }
+        }
+    }
+
+    BackHandler(enabled = st !is StScreen.Home) {
+        st = when (val s = st) {
+            is StScreen.Listing -> StScreen.Home
+            is StScreen.Entry -> entryReturn
+            is StScreen.About -> StScreen.Entry(s.id)
+            is StScreen.Edit -> StScreen.Entry(s.id)
+            is StScreen.Match -> StScreen.Entry(s.id)
+            StScreen.Home -> StScreen.Home
+        }
+    }
+
+    when (val s = st) {
+        StScreen.Home -> StatsScreen(
+            entries = all,
+            onMenu = onMenu,
+            onOpenList = { st = StScreen.Listing(it) },
+            onOpenEntry = { entryReturn = StScreen.Home; st = StScreen.Entry(it) },
+        )
+        is StScreen.Listing -> StatListScreen(
+            title = statTitle(s.filter),
+            items = statEntries(s.filter, all ?: emptyList()),
+            onBack = { st = StScreen.Home },
+            onOpen = { entryReturn = s; st = StScreen.Entry(it) },
+        )
+        is StScreen.Entry -> EntryScreen(
+            repo = repo,
+            id = s.id,
+            onBack = { st = entryReturn },
+            onEdit = { st = StScreen.Edit(s.id) },
+            onAbout = { st = StScreen.About(s.id) },
+            onFindTmdb = { st = StScreen.Match(s.id) },
+        )
+        is StScreen.About -> AboutScreen(
+            repo = repo,
+            id = s.id,
+            onBack = { st = StScreen.Entry(s.id) },
+        )
+        is StScreen.Match -> MatchScreen(
+            repo = repo,
+            id = s.id,
+            onDone = { st = StScreen.Entry(s.id) },
+        )
+        is StScreen.Edit -> EditScreen(
+            repo = repo,
+            id = s.id,
+            onDone = { st = StScreen.Entry(s.id) },
         )
     }
 }
