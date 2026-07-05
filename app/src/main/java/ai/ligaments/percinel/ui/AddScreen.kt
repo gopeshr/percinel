@@ -1,6 +1,7 @@
 package ai.ligaments.percinel.ui
 
 import ai.ligaments.percinel.data.Entry
+import ai.ligaments.percinel.data.STATUS_WATCHLIST
 import ai.ligaments.percinel.data.SearchResult
 import ai.ligaments.percinel.data.Tmdb
 import androidx.compose.foundation.clickable
@@ -54,7 +55,7 @@ import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AddScreen(onCancel: () -> Unit, onSave: (Entry) -> Unit) {
+fun AddScreen(onCancel: () -> Unit, onSave: (Entry) -> Unit, watchlist: Boolean = false) {
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
     var searching by remember { mutableStateOf(false) }
@@ -106,6 +107,7 @@ fun AddScreen(onCancel: () -> Unit, onSave: (Entry) -> Unit) {
                     Text(
                         when {
                             manual -> "Add manually"
+                            watchlist -> "Add to watchlist"
                             selected == null -> "Search"
                             else -> "Add a watch"
                         },
@@ -172,7 +174,27 @@ fun AddScreen(onCancel: () -> Unit, onSave: (Entry) -> Unit) {
                     searching = searching,
                     error = error,
                     offline = offline,
-                    onPick = { selected = it },
+                    allowManual = !watchlist,
+                    onPick = { r ->
+                        if (watchlist) {
+                            onSave(
+                                Entry(
+                                    id = 0,
+                                    tmdbId = r.tmdbId,
+                                    mediaType = r.mediaType,
+                                    title = r.title,
+                                    posterPath = r.posterPath,
+                                    year = r.year,
+                                    rating = 0.0,
+                                    watchedAt = System.currentTimeMillis(),
+                                    notes = null,
+                                    status = STATUS_WATCHLIST,
+                                )
+                            )
+                        } else {
+                            selected = r
+                        }
+                    },
                     onAddManual = {
                         if (query.isNotBlank()) mTitle = query.trim()
                         manual = true
@@ -220,6 +242,7 @@ private fun SearchPane(
     searching: Boolean,
     error: String?,
     offline: Boolean,
+    allowManual: Boolean,
     onPick: (SearchResult) -> Unit,
     onAddManual: () -> Unit,
 ) {
@@ -232,12 +255,14 @@ private fun SearchPane(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         )
-        Row(
-            Modifier.fillMaxWidth().clickable { onAddManual() }.padding(horizontal = 20.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("Can't find it? ", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
-            Text("Add manually", color = MaterialTheme.colorScheme.primary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        if (allowManual) {
+            Row(
+                Modifier.fillMaxWidth().clickable { onAddManual() }.padding(horizontal = 20.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Can't find it? ", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                Text("Add manually", color = MaterialTheme.colorScheme.primary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            }
         }
         if (searching) {
             Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {

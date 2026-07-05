@@ -20,8 +20,8 @@ android {
         applicationId = "ai.ligaments.percinel"
         minSdk = 26
         targetSdk = 34
-        versionCode = 17
-        versionName = "1.8.2"
+        versionCode = 26
+        versionName = "1.14"
         buildConfigField("String", "TMDB_TOKEN", "\"$tmdbToken\"")
     }
 
@@ -75,6 +75,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-core")
+    implementation("androidx.compose.material:material-icons-extended")
 
     implementation("io.coil-kt:coil-compose:2.7.0")
 }

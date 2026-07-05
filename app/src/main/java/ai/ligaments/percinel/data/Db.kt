@@ -6,6 +6,9 @@ import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 
+const val STATUS_WATCHED = "watched"
+const val STATUS_WATCHLIST = "watchlist"
+
 data class Entry(
     val id: Long,
     val tmdbId: Long,
@@ -16,9 +19,10 @@ data class Entry(
     val rating: Double,
     val watchedAt: Long,
     val notes: String?,
+    val status: String = STATUS_WATCHED,
 )
 
-private class DbHelper(ctx: Context) : SQLiteOpenHelper(ctx, "percinel.db", null, 1) {
+private class DbHelper(ctx: Context) : SQLiteOpenHelper(ctx, "percinel.db", null, 2) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
             """
@@ -31,14 +35,19 @@ private class DbHelper(ctx: Context) : SQLiteOpenHelper(ctx, "percinel.db", null
                 year INTEGER,
                 rating REAL NOT NULL,
                 watched_at INTEGER NOT NULL,
-                notes TEXT
+                notes TEXT,
+                status TEXT NOT NULL DEFAULT '$STATUS_WATCHED'
             )
             """.trimIndent()
         )
         db.execSQL("CREATE INDEX idx_watched ON entries(watched_at DESC)")
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {}
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) {
+            db.execSQL("ALTER TABLE entries ADD COLUMN status TEXT NOT NULL DEFAULT '$STATUS_WATCHED'")
+        }
+    }
 }
 
 class Repo(ctx: Context) {
@@ -47,9 +56,28 @@ class Repo(ctx: Context) {
     fun list(): List<Entry> {
         val out = ArrayList<Entry>()
         helper.readableDatabase
-            .rawQuery("SELECT * FROM entries ORDER BY watched_at DESC, id DESC", null)
+            .rawQuery("SELECT * FROM entries WHERE status = ? ORDER BY watched_at DESC, id DESC", arrayOf(STATUS_WATCHED))
             .use { c -> while (c.moveToNext()) out.add(c.toEntry()) }
         return out
+    }
+
+    fun watchlist(): List<Entry> {
+        val out = ArrayList<Entry>()
+        helper.readableDatabase
+            .rawQuery("SELECT * FROM entries WHERE status = ? ORDER BY id DESC", arrayOf(STATUS_WATCHLIST))
+            .use { c -> while (c.moveToNext()) out.add(c.toEntry()) }
+        return out
+    }
+
+    /** Move a watchlist item into watches, capturing rating/date/notes now. */
+    fun markWatched(id: Long, rating: Double, watchedAt: Long, notes: String?) {
+        val v = ContentValues().apply {
+            put("status", STATUS_WATCHED)
+            put("rating", rating)
+            put("watched_at", watchedAt)
+            put("notes", notes)
+        }
+        helper.writableDatabase.update("entries", v, "id = ?", arrayOf(id.toString()))
     }
 
     fun get(id: Long): Entry? =
@@ -66,6 +94,10 @@ class Repo(ctx: Context) {
 
     fun delete(id: Long) {
         helper.writableDatabase.delete("entries", "id = ?", arrayOf(id.toString()))
+    }
+
+    fun clearAll() {
+        helper.writableDatabase.delete("entries", null, null)
     }
 
     /** Attach TMDb identity to an entry (used to enrich a manual entry). Rating/date/notes untouched. */
@@ -93,6 +125,7 @@ private fun Cursor.toEntry(): Entry {
         rating = getDouble(idx("rating")),
         watchedAt = getLong(idx("watched_at")),
         notes = idx("notes").let { if (isNull(it)) null else getString(it) },
+        status = idx("status").let { if (isNull(it)) STATUS_WATCHED else getString(it) },
     )
 }
 
@@ -105,4 +138,5 @@ private fun Entry.toValues() = ContentValues().apply {
     put("rating", rating)
     put("watched_at", watchedAt)
     put("notes", notes)
+    put("status", status)
 }

@@ -24,6 +24,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -55,7 +58,7 @@ import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AboutScreen(repo: Repo, id: Long, onBack: () -> Unit) {
+fun AboutScreen(repo: Repo, id: Long, onBack: () -> Unit, onMarkWatched: (() -> Unit)? = null) {
     var entry by remember { mutableStateOf<Entry?>(null) }
     var details by remember { mutableStateOf<Details?>(null) }
 
@@ -151,6 +154,23 @@ fun AboutScreen(repo: Repo, id: Long, onBack: () -> Unit) {
                             modifier = Modifier.padding(top = 6.dp),
                         )
                     }
+                }
+            }
+
+            if (onMarkWatched != null) {
+                Button(
+                    onClick = onMarkWatched,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp)
+                        .padding(top = 18.dp),
+                ) {
+                    Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text("  Mark as watched", fontWeight = FontWeight.SemiBold)
                 }
             }
 

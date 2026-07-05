@@ -5,29 +5,45 @@ import ai.ligaments.percinel.data.Repo
 import ai.ligaments.percinel.data.Tmdb
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.NavigationDrawerItemDefaults
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FloatingActionButton
@@ -35,6 +51,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
@@ -58,6 +75,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -83,72 +101,241 @@ private enum class SortMode(val label: String) { RECENT("Recent"), RATING("Ratin
 private enum class TypeFilter(val label: String, val mediaType: String?) {
     ALL("All", null), MOVIES("Movies", "movie"), SERIES("Series", "tv")
 }
+private enum class Section(val label: String) {
+    WATCHES("Watches"), WATCHLIST("Watchlist"), STATS("Stats"), PROFILE("You"), SETTINGS("Settings")
+}
 
+private sealed interface WlScreen {
+    data object List : WlScreen
+    data object Add : WlScreen
+    data class About(val id: Long) : WlScreen
+    data class MarkWatched(val id: Long) : WlScreen
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun App() {
     val context = LocalContext.current
     val repo = remember { Repo(context) }
     val scope = rememberCoroutineScope()
 
+    var section by remember { mutableStateOf(Section.WATCHES) }
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    fun openDrawer() { scope.launch { drawerState.open() } }
+
     var screen by remember { mutableStateOf<Screen>(Screen.Home) }
     var entries by remember { mutableStateOf<List<Entry>>(emptyList()) }
 
-    LaunchedEffect(screen) {
-        if (screen is Screen.Home) {
+    LaunchedEffect(screen, section) {
+        if (section == Section.WATCHES && screen is Screen.Home) {
             entries = withContext(Dispatchers.IO) { repo.list() }
         }
     }
 
-    BackHandler(enabled = screen !is Screen.Home) { screen = Screen.Home }
+    BackHandler(enabled = section != Section.WATCHES) { section = Section.WATCHES }
+    BackHandler(enabled = section == Section.WATCHES && screen !is Screen.Home) { screen = Screen.Home }
 
+    val atTopLevel = section != Section.WATCHES || screen is Screen.Home
+
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        gesturesEnabled = atTopLevel,
+        drawerContent = {
+            DrawerSheet(current = section, onSelect = {
+                section = it
+                screen = Screen.Home
+                scope.launch { drawerState.close() }
+            })
+        },
+    ) {
+        when (section) {
+            Section.STATS -> StatsScreen(repo = repo, onMenu = { openDrawer() })
+            Section.PROFILE -> ProfileScreen(repo = repo, onMenu = { openDrawer() })
+            Section.SETTINGS -> SettingsScreen(repo = repo, onMenu = { openDrawer() })
+            Section.WATCHLIST -> WatchlistFlow(repo = repo, scope = scope, onMenu = { openDrawer() })
+            Section.WATCHES -> WatchesFlow(
+                repo = repo,
+                scope = scope,
+                screen = screen,
+                entries = entries,
+                onScreen = { screen = it },
+                onEntries = { entries = it },
+                onMenu = { openDrawer() },
+            )
+        }
+    }
+}
+
+private fun sectionIcon(s: Section): androidx.compose.ui.graphics.vector.ImageVector = when (s) {
+    Section.WATCHES -> Icons.Filled.Movie
+    Section.WATCHLIST -> Icons.Filled.BookmarkBorder
+    Section.STATS -> Icons.Filled.BarChart
+    Section.PROFILE -> Icons.Filled.Person
+    Section.SETTINGS -> Icons.Filled.Settings
+}
+
+@Composable
+private fun DrawerSheet(current: Section, onSelect: (Section) -> Unit) {
+    ModalDrawerSheet(drawerContainerColor = MaterialTheme.colorScheme.surface) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 24.dp, top = 32.dp, end = 24.dp, bottom = 22.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)),
+            ) {
+                Image(
+                    painter = painterResource(ai.ligaments.percinel.R.drawable.ic_launcher_background),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                Image(
+                    painter = painterResource(ai.ligaments.percinel.R.drawable.ic_launcher_foreground),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            Column(Modifier.padding(start = 14.dp)) {
+                Wordmark()
+                Text(
+                    "your movie diary",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(horizontal = 20.dp))
+        Spacer(Modifier.height(10.dp))
+        Section.entries.forEach { s ->
+            NavigationDrawerItem(
+                icon = { Icon(sectionIcon(s), contentDescription = null) },
+                label = { Text(s.label, fontSize = 15.sp) },
+                selected = s == current,
+                onClick = { onSelect(s) },
+                colors = NavigationDrawerItemDefaults.colors(
+                    selectedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    unselectedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                ),
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun WatchesFlow(
+    repo: Repo,
+    scope: kotlinx.coroutines.CoroutineScope,
+    screen: Screen,
+    entries: List<Entry>,
+    onScreen: (Screen) -> Unit,
+    onEntries: (List<Entry>) -> Unit,
+    onMenu: () -> Unit,
+) {
     when (val s = screen) {
         Screen.Home -> HomeScreen(
             entries = entries,
-            onAdd = { screen = Screen.Add },
-            onOpen = { screen = Screen.Entry(it) },
+            onMenu = onMenu,
+            onAdd = { onScreen(Screen.Add) },
+            onOpen = { onScreen(Screen.Entry(it)) },
             onDelete = { list ->
                 val ids = list.map { it.id }.toSet()
-                entries = entries.filterNot { it.id in ids }
+                onEntries(entries.filterNot { it.id in ids })
                 scope.launch { withContext(Dispatchers.IO) { list.forEach { repo.delete(it.id) } } }
             },
             onUndo = { list ->
                 scope.launch {
                     withContext(Dispatchers.IO) { list.forEach { repo.insert(it) } }
-                    entries = withContext(Dispatchers.IO) { repo.list() }
+                    onEntries(withContext(Dispatchers.IO) { repo.list() })
                 }
             },
         )
         Screen.Add -> AddScreen(
-            onCancel = { screen = Screen.Home },
+            onCancel = { onScreen(Screen.Home) },
             onSave = { newEntry ->
                 scope.launch {
                     withContext(Dispatchers.IO) { repo.insert(newEntry) }
-                    screen = Screen.Home
+                    onScreen(Screen.Home)
                 }
             },
         )
         is Screen.Entry -> EntryScreen(
             repo = repo,
             id = s.id,
-            onBack = { screen = Screen.Home },
-            onEdit = { screen = Screen.Edit(s.id) },
-            onAbout = { screen = Screen.About(s.id) },
-            onFindTmdb = { screen = Screen.Match(s.id) },
+            onBack = { onScreen(Screen.Home) },
+            onEdit = { onScreen(Screen.Edit(s.id)) },
+            onAbout = { onScreen(Screen.About(s.id)) },
+            onFindTmdb = { onScreen(Screen.Match(s.id)) },
         )
         is Screen.About -> AboutScreen(
             repo = repo,
             id = s.id,
-            onBack = { screen = Screen.Entry(s.id) },
+            onBack = { onScreen(Screen.Entry(s.id)) },
         )
         is Screen.Match -> MatchScreen(
             repo = repo,
             id = s.id,
-            onDone = { screen = Screen.Entry(s.id) },
+            onDone = { onScreen(Screen.Entry(s.id)) },
         )
         is Screen.Edit -> EditScreen(
             repo = repo,
             id = s.id,
-            onDone = { screen = Screen.Home },
+            onDone = { onScreen(Screen.Home) },
+        )
+    }
+}
+
+@Composable
+private fun WatchlistFlow(
+    repo: Repo,
+    scope: kotlinx.coroutines.CoroutineScope,
+    onMenu: () -> Unit,
+) {
+    var wscreen by remember { mutableStateOf<WlScreen>(WlScreen.List) }
+    var items by remember { mutableStateOf<List<Entry>>(emptyList()) }
+
+    LaunchedEffect(wscreen) {
+        if (wscreen is WlScreen.List) items = withContext(Dispatchers.IO) { repo.watchlist() }
+    }
+    BackHandler(enabled = wscreen !is WlScreen.List) { wscreen = WlScreen.List }
+
+    when (val w = wscreen) {
+        WlScreen.List -> WatchlistScreen(
+            items = items,
+            onMenu = onMenu,
+            onAdd = { wscreen = WlScreen.Add },
+            onOpen = { wscreen = WlScreen.About(it) },
+            onMarkWatched = { wscreen = WlScreen.MarkWatched(it) },
+            onRemove = { e ->
+                items = items.filterNot { it.id == e.id }
+                scope.launch { withContext(Dispatchers.IO) { repo.delete(e.id) } }
+            },
+        )
+        is WlScreen.About -> AboutScreen(
+            repo = repo,
+            id = w.id,
+            onBack = { wscreen = WlScreen.List },
+            onMarkWatched = { wscreen = WlScreen.MarkWatched(w.id) },
+        )
+        WlScreen.Add -> AddScreen(
+            watchlist = true,
+            onCancel = { wscreen = WlScreen.List },
+            onSave = { newItem ->
+                scope.launch {
+                    withContext(Dispatchers.IO) { repo.insert(newItem) }
+                    wscreen = WlScreen.List
+                }
+            },
+        )
+        is WlScreen.MarkWatched -> MarkWatchedScreen(
+            repo = repo,
+            id = w.id,
+            onDone = { wscreen = WlScreen.List },
         )
     }
 }
@@ -157,6 +344,7 @@ fun App() {
 @Composable
 private fun HomeScreen(
     entries: List<Entry>,
+    onMenu: () -> Unit,
     onAdd: () -> Unit,
     onOpen: (Long) -> Unit,
     onDelete: (List<Entry>) -> Unit,
@@ -245,9 +433,15 @@ private fun HomeScreen(
             } else {
                 CenterAlignedTopAppBar(
                     title = { Wordmark() },
+                    navigationIcon = {
+                        IconButton(onClick = onMenu) {
+                            Icon(Icons.Default.Menu, contentDescription = "Menu")
+                        }
+                    },
                     colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
                         containerColor = MaterialTheme.colorScheme.background,
                         titleContentColor = MaterialTheme.colorScheme.onBackground,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onBackground,
                     ),
                 )
             }
