@@ -20,8 +20,8 @@ android {
         applicationId = "ai.ligaments.percinel"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 8
+        versionName = "1.4.1"
         buildConfigField("String", "TMDB_TOKEN", "\"$tmdbToken\"")
     }
 

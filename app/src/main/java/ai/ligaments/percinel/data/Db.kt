@@ -67,6 +67,18 @@ class Repo(ctx: Context) {
     fun delete(id: Long) {
         helper.writableDatabase.delete("entries", "id = ?", arrayOf(id.toString()))
     }
+
+    /** Attach TMDb identity to an entry (used to enrich a manual entry). Rating/date/notes untouched. */
+    fun linkTmdb(id: Long, tmdbId: Long, mediaType: String, title: String, posterPath: String?, year: Int?) {
+        val v = ContentValues().apply {
+            put("tmdb_id", tmdbId)
+            put("media_type", mediaType)
+            put("title", title)
+            put("poster_path", posterPath)
+            put("year", year)
+        }
+        helper.writableDatabase.update("entries", v, "id = ?", arrayOf(id.toString()))
+    }
 }
 
 private fun Cursor.toEntry(): Entry {

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -24,6 +25,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -46,6 +49,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -55,26 +59,41 @@ fun AddScreen(onCancel: () -> Unit, onSave: (Entry) -> Unit) {
     var results by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
     var searching by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var offline by remember { mutableStateOf(false) }
 
     var selected by remember { mutableStateOf<SearchResult?>(null) }
     var rating by remember { mutableStateOf<Double?>(null) }
     var watchedAt by remember { mutableStateOf(System.currentTimeMillis()) }
     var notes by remember { mutableStateOf("") }
 
-    LaunchedEffect(query, selected) {
-        if (selected != null) return@LaunchedEffect
+    var manual by remember { mutableStateOf(false) }
+    var mTitle by remember { mutableStateOf("") }
+    var mType by remember { mutableStateOf("movie") }
+    var mYear by remember { mutableStateOf("") }
+
+    LaunchedEffect(query, selected, manual) {
+        if (selected != null || manual) return@LaunchedEffect
         val q = query.trim()
         if (q.length < 2) {
             results = emptyList(); error = null; searching = false
             return@LaunchedEffect
         }
-        searching = true; error = null
+        searching = true; error = null; offline = false
         delay(300)
         try {
             results = Tmdb.search(q)
+            searching = false
+        } catch (e: CancellationException) {
+            // A newer keystroke restarted this effect — let cancellation
+            // propagate without touching UI state.
+            throw e
         } catch (e: Exception) {
-            error = e.message ?: "Search failed"; results = emptyList()
-        } finally {
+            results = emptyList()
+            if (e is java.io.IOException) {
+                offline = true; error = null
+            } else {
+                offline = false; error = "Hmm, that didn't work. Give it another try."
+            }
             searching = false
         }
     }
@@ -83,9 +102,24 @@ fun AddScreen(onCancel: () -> Unit, onSave: (Entry) -> Unit) {
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text(if (selected == null) "Search" else "Log a watch", fontWeight = FontWeight.Bold) },
+                title = {
+                    Text(
+                        when {
+                            manual -> "Add manually"
+                            selected == null -> "Search"
+                            else -> "Log a watch"
+                        },
+                        fontWeight = FontWeight.Bold,
+                    )
+                },
                 navigationIcon = {
-                    IconButton(onClick = { if (selected != null) selected = null else onCancel() }) {
+                    IconButton(onClick = {
+                        when {
+                            manual -> manual = false
+                            selected != null -> selected = null
+                            else -> onCancel()
+                        }
+                    }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
@@ -98,14 +132,51 @@ fun AddScreen(onCancel: () -> Unit, onSave: (Entry) -> Unit) {
         },
     ) { padding ->
         Box(Modifier.padding(padding).fillMaxSize()) {
-            if (selected == null) {
+            if (manual) {
+                ManualForm(
+                    title = mTitle,
+                    onTitle = { mTitle = it },
+                    type = mType,
+                    onType = { mType = it },
+                    year = mYear,
+                    onYear = { mYear = it.filter(Char::isDigit).take(4) },
+                    rating = rating,
+                    onRating = { rating = it },
+                    watchedAt = watchedAt,
+                    onWatchedAt = { watchedAt = it },
+                    notes = notes,
+                    onNotes = { notes = it },
+                    onSave = {
+                        val r = rating ?: return@ManualForm
+                        if (mTitle.isBlank()) return@ManualForm
+                        onSave(
+                            Entry(
+                                id = 0,
+                                tmdbId = 0,
+                                mediaType = mType,
+                                title = mTitle.trim(),
+                                posterPath = null,
+                                year = mYear.toIntOrNull(),
+                                rating = r,
+                                watchedAt = watchedAt,
+                                notes = notes.trim().ifBlank { null },
+                            )
+                        )
+                    },
+                )
+            } else if (selected == null) {
                 SearchPane(
                     query = query,
                     onQuery = { query = it },
                     results = results,
                     searching = searching,
                     error = error,
+                    offline = offline,
                     onPick = { selected = it },
+                    onAddManual = {
+                        if (query.isNotBlank()) mTitle = query.trim()
+                        manual = true
+                    },
                 )
             } else {
                 EntryForm(
@@ -148,7 +219,9 @@ private fun SearchPane(
     results: List<SearchResult>,
     searching: Boolean,
     error: String?,
+    offline: Boolean,
     onPick: (SearchResult) -> Unit,
+    onAddManual: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize()) {
         OutlinedTextField(
@@ -159,10 +232,28 @@ private fun SearchPane(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         )
+        Row(
+            Modifier.fillMaxWidth().clickable { onAddManual() }.padding(horizontal = 20.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Can't find it? ", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+            Text("Add manually", color = MaterialTheme.colorScheme.primary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        }
         if (searching) {
             Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
                 Text("Searching…", modifier = Modifier.padding(start = 10.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        if (offline) {
+            Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("You're offline", fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                Text(
+                    "No worries — jot it down yourself above. You can dress it up with a poster and cast whenever you're back online.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
             }
         }
         if (error != null) {
@@ -276,6 +367,96 @@ fun EntryForm(
             modifier = Modifier.fillMaxWidth().padding(top = 28.dp),
         ) {
             Text(saveLabel, fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.padding(vertical = 6.dp))
+        }
+    }
+}
+
+@Composable
+private fun ManualForm(
+    title: String,
+    onTitle: (String) -> Unit,
+    type: String,
+    onType: (String) -> Unit,
+    year: String,
+    onYear: (String) -> Unit,
+    rating: Double?,
+    onRating: (Double?) -> Unit,
+    watchedAt: Long,
+    onWatchedAt: (Long) -> Unit,
+    notes: String,
+    onNotes: (String) -> Unit,
+    onSave: () -> Unit,
+) {
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+    ) {
+        SectionLabel("Title")
+        OutlinedTextField(
+            value = title,
+            onValueChange = onTitle,
+            placeholder = { Text("e.g. My wedding video") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        SectionLabel("Type", top = 24.dp)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = type == "movie",
+                onClick = { onType("movie") },
+                label = { Text("Movie") },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = MaterialTheme.colorScheme.primary,
+                    selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+                ),
+            )
+            FilterChip(
+                selected = type == "tv",
+                onClick = { onType("tv") },
+                label = { Text("Series") },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = MaterialTheme.colorScheme.primary,
+                    selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+                ),
+            )
+        }
+
+        SectionLabel("Year (optional)", top = 24.dp)
+        OutlinedTextField(
+            value = year,
+            onValueChange = onYear,
+            placeholder = { Text("e.g. 2024") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.width(140.dp),
+        )
+
+        SectionLabel("Your rating", top = 24.dp)
+        RatingField(initial = rating, onChange = onRating)
+
+        SectionLabel("Watched on", top = 24.dp)
+        DateTimeRow(millis = watchedAt, onChange = onWatchedAt)
+
+        SectionLabel("Notes", top = 24.dp)
+        OutlinedTextField(
+            value = notes,
+            onValueChange = onNotes,
+            placeholder = { Text("Any thoughts?") },
+            modifier = Modifier.fillMaxWidth(),
+            minLines = 3,
+        )
+
+        Button(
+            onClick = onSave,
+            enabled = title.isNotBlank() && rating != null,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+            ),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 28.dp),
+        ) {
+            Text("Save entry", fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.padding(vertical = 6.dp))
         }
     }
 }

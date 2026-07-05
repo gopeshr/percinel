@@ -11,20 +11,28 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -47,7 +55,14 @@ import kotlinx.coroutines.withContext
 private sealed interface Screen {
     data object Home : Screen
     data object Add : Screen
+    data class Detail(val id: Long) : Screen
     data class Edit(val id: Long) : Screen
+    data class Match(val id: Long) : Screen
+}
+
+private enum class SortMode(val label: String) { RECENT("Recent"), RATING("Rating"), TITLE("Title") }
+private enum class TypeFilter(val label: String, val mediaType: String?) {
+    ALL("All", null), MOVIES("Movies", "movie"), SERIES("Series", "tv")
 }
 
 @Composable
@@ -71,7 +86,7 @@ fun App() {
         Screen.Home -> HomeScreen(
             entries = entries,
             onAdd = { screen = Screen.Add },
-            onOpen = { screen = Screen.Edit(it) },
+            onOpen = { screen = Screen.Detail(it) },
         )
         Screen.Add -> AddScreen(
             onCancel = { screen = Screen.Home },
@@ -81,6 +96,18 @@ fun App() {
                     screen = Screen.Home
                 }
             },
+        )
+        is Screen.Detail -> DetailScreen(
+            repo = repo,
+            id = s.id,
+            onBack = { screen = Screen.Home },
+            onEdit = { screen = Screen.Edit(s.id) },
+            onFindTmdb = { screen = Screen.Match(s.id) },
+        )
+        is Screen.Match -> MatchScreen(
+            repo = repo,
+            id = s.id,
+            onDone = { screen = Screen.Detail(s.id) },
         )
         is Screen.Edit -> EditScreen(
             repo = repo,
@@ -93,6 +120,23 @@ fun App() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun HomeScreen(entries: List<Entry>, onAdd: () -> Unit, onOpen: (Long) -> Unit) {
+    var query by remember { mutableStateOf("") }
+    var sortMode by remember { mutableStateOf(SortMode.RECENT) }
+    var typeFilter by remember { mutableStateOf(TypeFilter.ALL) }
+
+    val displayed = remember(entries, query, sortMode, typeFilter) {
+        entries
+            .filter { typeFilter.mediaType == null || it.mediaType == typeFilter.mediaType }
+            .filter { query.isBlank() || it.title.contains(query.trim(), ignoreCase = true) }
+            .let { list ->
+                when (sortMode) {
+                    SortMode.RECENT -> list.sortedByDescending { it.watchedAt }
+                    SortMode.RATING -> list.sortedByDescending { it.rating }
+                    SortMode.TITLE -> list.sortedBy { it.title.lowercase() }
+                }
+            }
+    }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -115,20 +159,82 @@ private fun HomeScreen(entries: List<Entry>, onAdd: () -> Unit, onOpen: (Long) -
         if (entries.isEmpty()) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("No entries yet", fontSize = 18.sp, fontWeight = FontWeight.Medium)
+                    Text("Nothing logged yet", fontSize = 18.sp, fontWeight = FontWeight.Medium)
                     Text(
-                        "Tap + to log your first watch",
+                        "Tap + to log the last thing you watched",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 6.dp),
                     )
                 }
             }
-        } else {
-            LazyColumn(
-                modifier = Modifier.padding(padding),
-                contentPadding = PaddingValues(vertical = 8.dp),
+            return@Scaffold
+        }
+
+        Column(Modifier.padding(padding).fillMaxSize()) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                placeholder = { Text("Search your log") },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (query.isNotEmpty()) {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "Clear",
+                            modifier = Modifier.clickable { query = "" },
+                        )
+                    }
+                },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(entries, key = { it.id }) { entry -> EntryRow(entry, onOpen) }
+                TypeFilter.entries.forEach { f ->
+                    FilterChip(
+                        selected = typeFilter == f,
+                        onClick = { typeFilter = f },
+                        label = { Text(f.label) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primary,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+                        ),
+                    )
+                }
+                Box(Modifier.weight(1f))
+                SortControl(sortMode) { sortMode = it }
+            }
+
+            if (displayed.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Nothing here matches that", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            } else {
+                LazyColumn(contentPadding = PaddingValues(vertical = 8.dp)) {
+                    items(displayed, key = { it.id }) { entry -> EntryRow(entry, onOpen) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SortControl(current: SortMode, onSelect: (SortMode) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        TextButton(onClick = { expanded = true }) {
+            Text("Sort: ${current.label}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            SortMode.entries.forEach { mode ->
+                DropdownMenuItem(
+                    text = { Text(mode.label) },
+                    onClick = { onSelect(mode); expanded = false },
+                )
             }
         }
     }
