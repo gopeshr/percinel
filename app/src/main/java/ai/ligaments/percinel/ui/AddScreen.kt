@@ -107,7 +107,7 @@ fun AddScreen(onCancel: () -> Unit, onSave: (Entry) -> Unit) {
                         when {
                             manual -> "Add manually"
                             selected == null -> "Search"
-                            else -> "Log a watch"
+                            else -> "Add a watch"
                         },
                         fontWeight = FontWeight.Bold,
                     )
@@ -188,7 +188,7 @@ fun AddScreen(onCancel: () -> Unit, onSave: (Entry) -> Unit) {
                     notes = notes,
                     onNotes = { notes = it },
                     onChange = { selected = null },
-                    saveLabel = "Save entry",
+                    saveLabel = "Save",
                     onSave = {
                         val r = rating ?: return@EntryForm
                         val s = selected!!
@@ -456,7 +456,7 @@ private fun ManualForm(
             shape = RoundedCornerShape(12.dp),
             modifier = Modifier.fillMaxWidth().padding(top = 28.dp),
         ) {
-            Text("Save entry", fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.padding(vertical = 6.dp))
+            Text("Save", fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.padding(vertical = 6.dp))
         }
     }
 }

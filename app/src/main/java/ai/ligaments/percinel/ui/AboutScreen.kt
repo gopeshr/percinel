@@ -5,10 +5,10 @@ import ai.ligaments.percinel.data.Entry
 import ai.ligaments.percinel.data.Repo
 import ai.ligaments.percinel.data.Tmdb
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,7 +21,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -32,7 +31,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -57,7 +55,7 @@ import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DetailScreen(repo: Repo, id: Long, onBack: () -> Unit, onEdit: () -> Unit, onFindTmdb: () -> Unit) {
+fun AboutScreen(repo: Repo, id: Long, onBack: () -> Unit) {
     var entry by remember { mutableStateOf<Entry?>(null) }
     var details by remember { mutableStateOf<Details?>(null) }
 
@@ -71,7 +69,7 @@ fun DetailScreen(repo: Repo, id: Long, onBack: () -> Unit, onEdit: () -> Unit, o
             } catch (c: CancellationException) {
                 throw c
             } catch (_: Exception) {
-                // Offline, manual entry, or fetch failed — show stored info only.
+                // Offline or fetch failed — show what we have.
             }
         }
     }
@@ -84,11 +82,6 @@ fun DetailScreen(repo: Repo, id: Long, onBack: () -> Unit, onEdit: () -> Unit, o
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                actions = {
-                    TextButton(onClick = onEdit) {
-                        Text("Edit", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -158,53 +151,6 @@ fun DetailScreen(repo: Repo, id: Long, onBack: () -> Unit, onEdit: () -> Unit, o
                             modifier = Modifier.padding(top = 6.dp),
                         )
                     }
-                    Row(
-                        Modifier.padding(top = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        RatingPill(e.rating)
-                        Text(formatListDate(e.watchedAt), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
-                    }
-                }
-            }
-
-            if (e.tmdbId == 0L) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp)
-                        .padding(top = 18.dp)
-                        .clickable { onFindTmdb() },
-                ) {
-                    Row(
-                        Modifier.padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Just the basics for now", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                            Text(
-                                "Add a poster, synopsis, and cast in a tap",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(top = 2.dp),
-                            )
-                        }
-                        Text("Find it ›", color = MaterialTheme.colorScheme.primary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                    }
-                }
-            }
-
-            if (!e.notes.isNullOrBlank()) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 18.dp),
-                ) {
-                    Text(e.notes, fontSize = 14.sp, modifier = Modifier.padding(14.dp))
                 }
             }
 
@@ -221,7 +167,7 @@ fun DetailScreen(repo: Repo, id: Long, onBack: () -> Unit, onEdit: () -> Unit, o
             details?.cast?.takeIf { it.isNotEmpty() }?.let { cast ->
                 SectionHeader("Cast")
                 LazyRow(
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp),
+                    contentPadding = PaddingValues(horizontal = 20.dp),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     items(cast) { member ->
@@ -240,6 +186,12 @@ fun DetailScreen(repo: Repo, id: Long, onBack: () -> Unit, onEdit: () -> Unit, o
                             }
                         }
                     }
+                }
+            }
+
+            if (details?.overview.isNullOrBlank() && details?.cast.isNullOrEmpty()) {
+                Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                    Text("No extra details available", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                 }
             }
 

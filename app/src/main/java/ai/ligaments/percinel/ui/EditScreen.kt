@@ -62,7 +62,7 @@ fun EditScreen(repo: Repo, id: Long, onDone: () -> Unit) {
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text("Entry", fontWeight = FontWeight.Bold) },
+                title = { Text("Edit watch", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onDone) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -111,7 +111,7 @@ fun EditScreen(repo: Repo, id: Long, onDone: () -> Unit) {
                     },
                     extra = {
                         Text(
-                            "Delete entry",
+                            "Delete this watch",
                             color = MaterialTheme.colorScheme.error,
                             fontWeight = FontWeight.Medium,
                             fontSize = 15.sp,
@@ -129,8 +129,8 @@ fun EditScreen(repo: Repo, id: Long, onDone: () -> Unit) {
     if (confirmDelete && entry != null) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
-            title = { Text("Delete entry?") },
-            text = { Text("Remove “${entry!!.title}” from your log?") },
+            title = { Text("Delete this watch?") },
+            text = { Text("Remove “${entry!!.title}” from your watches?") },
             confirmButton = {
                 TextButton(onClick = {
                     confirmDelete = false

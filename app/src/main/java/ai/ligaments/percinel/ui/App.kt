@@ -4,7 +4,11 @@ import ai.ligaments.percinel.data.Entry
 import ai.ligaments.percinel.data.Repo
 import ai.ligaments.percinel.data.Tmdb
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,10 +32,19 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -43,6 +56,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
@@ -59,7 +73,8 @@ import kotlinx.coroutines.withContext
 private sealed interface Screen {
     data object Home : Screen
     data object Add : Screen
-    data class Detail(val id: Long) : Screen
+    data class Entry(val id: Long) : Screen
+    data class About(val id: Long) : Screen
     data class Edit(val id: Long) : Screen
     data class Match(val id: Long) : Screen
 }
@@ -90,7 +105,18 @@ fun App() {
         Screen.Home -> HomeScreen(
             entries = entries,
             onAdd = { screen = Screen.Add },
-            onOpen = { screen = Screen.Detail(it) },
+            onOpen = { screen = Screen.Entry(it) },
+            onDelete = { list ->
+                val ids = list.map { it.id }.toSet()
+                entries = entries.filterNot { it.id in ids }
+                scope.launch { withContext(Dispatchers.IO) { list.forEach { repo.delete(it.id) } } }
+            },
+            onUndo = { list ->
+                scope.launch {
+                    withContext(Dispatchers.IO) { list.forEach { repo.insert(it) } }
+                    entries = withContext(Dispatchers.IO) { repo.list() }
+                }
+            },
         )
         Screen.Add -> AddScreen(
             onCancel = { screen = Screen.Home },
@@ -101,17 +127,23 @@ fun App() {
                 }
             },
         )
-        is Screen.Detail -> DetailScreen(
+        is Screen.Entry -> EntryScreen(
             repo = repo,
             id = s.id,
             onBack = { screen = Screen.Home },
             onEdit = { screen = Screen.Edit(s.id) },
+            onAbout = { screen = Screen.About(s.id) },
             onFindTmdb = { screen = Screen.Match(s.id) },
+        )
+        is Screen.About -> AboutScreen(
+            repo = repo,
+            id = s.id,
+            onBack = { screen = Screen.Entry(s.id) },
         )
         is Screen.Match -> MatchScreen(
             repo = repo,
             id = s.id,
-            onDone = { screen = Screen.Detail(s.id) },
+            onDone = { screen = Screen.Entry(s.id) },
         )
         is Screen.Edit -> EditScreen(
             repo = repo,
@@ -121,13 +153,46 @@ fun App() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-private fun HomeScreen(entries: List<Entry>, onAdd: () -> Unit, onOpen: (Long) -> Unit) {
+private fun HomeScreen(
+    entries: List<Entry>,
+    onAdd: () -> Unit,
+    onOpen: (Long) -> Unit,
+    onDelete: (List<Entry>) -> Unit,
+    onUndo: (List<Entry>) -> Unit,
+) {
     var query by remember { mutableStateOf("") }
     var sortMode by remember { mutableStateOf(SortMode.RECENT) }
     var descending by remember { mutableStateOf(true) }
     var typeFilter by remember { mutableStateOf(TypeFilter.ALL) }
+    val snackbarState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
+    var selectionMode by remember { mutableStateOf(false) }
+    var selected by remember { mutableStateOf(setOf<Long>()) }
+
+    fun exitSelection() { selectionMode = false; selected = emptySet() }
+    fun toggle(id: Long) {
+        selected = if (id in selected) selected - id else selected + id
+        if (selected.isEmpty()) selectionMode = false
+    }
+
+    fun removeWithUndo(items: List<Entry>) {
+        if (items.isEmpty()) return
+        onDelete(items)
+        scope.launch {
+            val message = if (items.size == 1) "Removed “${items[0].title}”" else "Removed ${items.size} watches"
+            val result = snackbarState.showSnackbar(
+                message = message,
+                actionLabel = "Undo",
+                duration = SnackbarDuration.Short,
+            )
+            if (result == SnackbarResult.ActionPerformed) onUndo(items)
+        }
+    }
+
+    BackHandler(enabled = selectionMode) { exitSelection() }
 
     val displayed = remember(entries, query, sortMode, descending, typeFilter) {
         val filtered = entries
@@ -143,29 +208,64 @@ private fun HomeScreen(entries: List<Entry>, onAdd: () -> Unit, onOpen: (Long) -
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbarState) },
         topBar = {
-            CenterAlignedTopAppBar(
-                title = { Wordmark() },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    titleContentColor = MaterialTheme.colorScheme.onBackground,
-                ),
-            )
+            if (selectionMode) {
+                TopAppBar(
+                    title = { Text("${selected.size} selected", fontWeight = FontWeight.Bold) },
+                    navigationIcon = {
+                        IconButton(onClick = { exitSelection() }) {
+                            Icon(Icons.Default.Close, contentDescription = "Cancel")
+                        }
+                    },
+                    actions = {
+                        val allIds = displayed.map { it.id }.toSet()
+                        val allSelected = allIds.isNotEmpty() && selected.containsAll(allIds)
+                        TextButton(onClick = { selected = if (allSelected) emptySet() else allIds }) {
+                            Text(
+                                if (allSelected) "Clear" else "All",
+                                color = MaterialTheme.colorScheme.onBackground,
+                                fontWeight = FontWeight.Medium,
+                            )
+                        }
+                        TextButton(onClick = {
+                            val items = entries.filter { it.id in selected }
+                            exitSelection()
+                            removeWithUndo(items)
+                        }) {
+                            Text("Delete", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Medium)
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.background,
+                        titleContentColor = MaterialTheme.colorScheme.onBackground,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onBackground,
+                    ),
+                )
+            } else {
+                CenterAlignedTopAppBar(
+                    title = { Wordmark() },
+                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.background,
+                        titleContentColor = MaterialTheme.colorScheme.onBackground,
+                    ),
+                )
+            }
         },
         floatingActionButton = {
             FloatingActionButton(
                 onClick = onAdd,
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
-            ) { Icon(Icons.Default.Add, contentDescription = "Log a watch") }
+            ) { Icon(Icons.Default.Add, contentDescription = "Add a watch") }
         },
     ) { padding ->
         if (entries.isEmpty()) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Nothing logged yet", fontSize = 18.sp, fontWeight = FontWeight.Medium)
+                    Text("Nothing here yet", fontSize = 18.sp, fontWeight = FontWeight.Medium)
                     Text(
-                        "Tap + to log the last thing you watched",
+                        "Add the last thing you watched",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 6.dp),
                     )
@@ -178,7 +278,7 @@ private fun HomeScreen(entries: List<Entry>, onAdd: () -> Unit, onOpen: (Long) -
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = { Text("Search your log") },
+                placeholder = { Text("Search your watches") },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                 trailingIcon = {
                     if (query.isNotEmpty()) {
@@ -224,7 +324,55 @@ private fun HomeScreen(entries: List<Entry>, onAdd: () -> Unit, onOpen: (Long) -
                 }
             } else {
                 LazyColumn(contentPadding = PaddingValues(vertical = 8.dp)) {
-                    items(displayed, key = { it.id }) { entry -> EntryRow(entry, onOpen) }
+                    items(displayed, key = { it.id }) { entry ->
+                        val isSelected = entry.id in selected
+                        if (selectionMode) {
+                            EntryRow(
+                                entry = entry,
+                                selected = isSelected,
+                                selectionMode = true,
+                                onClick = { toggle(entry.id) },
+                                onLongClick = {},
+                            )
+                        } else {
+                            val dismissState = rememberSwipeToDismissBoxState(
+                                confirmValueChange = { value ->
+                                    if (value == SwipeToDismissBoxValue.EndToStart) {
+                                        removeWithUndo(listOf(entry)); true
+                                    } else false
+                                },
+                            )
+                            SwipeToDismissBox(
+                                state = dismissState,
+                                enableDismissFromStartToEnd = false,
+                                backgroundContent = {
+                                    Box(
+                                        Modifier
+                                            .fillMaxSize()
+                                            .background(MaterialTheme.colorScheme.errorContainer)
+                                            .padding(horizontal = 24.dp),
+                                        contentAlignment = Alignment.CenterEnd,
+                                    ) {
+                                        Text(
+                                            "Delete",
+                                            color = MaterialTheme.colorScheme.onErrorContainer,
+                                            fontWeight = FontWeight.Medium,
+                                        )
+                                    }
+                                },
+                            ) {
+                                Box(Modifier.background(MaterialTheme.colorScheme.background)) {
+                                    EntryRow(
+                                        entry = entry,
+                                        selected = false,
+                                        selectionMode = false,
+                                        onClick = { onOpen(entry.id) },
+                                        onLongClick = { selectionMode = true; selected = setOf(entry.id) },
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -289,15 +437,38 @@ private fun SortControl(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun EntryRow(entry: Entry, onOpen: (Long) -> Unit) {
+private fun EntryRow(
+    entry: Entry,
+    selected: Boolean,
+    selectionMode: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+) {
     Row(
         modifier = Modifier
-            .clickable { onOpen(entry.id) }
+            .fillMaxWidth()
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .background(if (selected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        if (selectionMode) {
+            Box(
+                Modifier.size(22.dp).clip(CircleShape).background(
+                    if (selected) MaterialTheme.colorScheme.primary else Color.Transparent
+                ),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (selected) {
+                    Text("✓", color = MaterialTheme.colorScheme.onPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                } else {
+                    Box(Modifier.size(20.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant))
+                }
+            }
+        }
         PosterImage(
             posterUrl = Tmdb.posterUrl(entry.posterPath, "w185"),
             mediaType = entry.mediaType,
