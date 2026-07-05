@@ -20,8 +20,8 @@ android {
         applicationId = "ai.ligaments.percinel"
         minSdk = 26
         targetSdk = 34
-        versionCode = 8
-        versionName = "1.4.1"
+        versionCode = 12
+        versionName = "1.5.3"
         buildConfigField("String", "TMDB_TOKEN", "\"$tmdbToken\"")
     }
 
@@ -64,6 +64,7 @@ android {
 
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.core:core-splashscreen:1.0.1")
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")

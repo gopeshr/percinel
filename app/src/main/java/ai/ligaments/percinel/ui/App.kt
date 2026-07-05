@@ -43,8 +43,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -122,26 +126,26 @@ fun App() {
 private fun HomeScreen(entries: List<Entry>, onAdd: () -> Unit, onOpen: (Long) -> Unit) {
     var query by remember { mutableStateOf("") }
     var sortMode by remember { mutableStateOf(SortMode.RECENT) }
+    var descending by remember { mutableStateOf(true) }
     var typeFilter by remember { mutableStateOf(TypeFilter.ALL) }
 
-    val displayed = remember(entries, query, sortMode, typeFilter) {
-        entries
+    val displayed = remember(entries, query, sortMode, descending, typeFilter) {
+        val filtered = entries
             .filter { typeFilter.mediaType == null || it.mediaType == typeFilter.mediaType }
             .filter { query.isBlank() || it.title.contains(query.trim(), ignoreCase = true) }
-            .let { list ->
-                when (sortMode) {
-                    SortMode.RECENT -> list.sortedByDescending { it.watchedAt }
-                    SortMode.RATING -> list.sortedByDescending { it.rating }
-                    SortMode.TITLE -> list.sortedBy { it.title.lowercase() }
-                }
-            }
+        val ascending = when (sortMode) {
+            SortMode.RECENT -> filtered.sortedBy { it.watchedAt }
+            SortMode.RATING -> filtered.sortedBy { it.rating }
+            SortMode.TITLE -> filtered.sortedBy { it.title.lowercase() }
+        }
+        if (descending) ascending.reversed() else ascending
     }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("My Log", fontWeight = FontWeight.Bold) },
+                title = { Wordmark() },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
                     titleContentColor = MaterialTheme.colorScheme.onBackground,
@@ -206,7 +210,12 @@ private fun HomeScreen(entries: List<Entry>, onAdd: () -> Unit, onOpen: (Long) -
                     )
                 }
                 Box(Modifier.weight(1f))
-                SortControl(sortMode) { sortMode = it }
+                SortControl(
+                    current = sortMode,
+                    descending = descending,
+                    onSelect = { sortMode = it; descending = it != SortMode.TITLE },
+                    onToggleDir = { descending = !descending },
+                )
             }
 
             if (displayed.isEmpty()) {
@@ -223,17 +232,57 @@ private fun HomeScreen(entries: List<Entry>, onAdd: () -> Unit, onOpen: (Long) -
 }
 
 @Composable
-private fun SortControl(current: SortMode, onSelect: (SortMode) -> Unit) {
+private fun Wordmark() {
+    val muted = Color(0xFF6F6B63)
+    Text(
+        buildAnnotatedString {
+            withStyle(SpanStyle(color = muted, fontWeight = FontWeight.Normal)) { append("per") }
+            withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)) { append("CINE") }
+            withStyle(SpanStyle(color = muted, fontWeight = FontWeight.Normal)) { append("l") }
+        },
+        fontSize = 22.sp,
+        letterSpacing = 0.5.sp,
+    )
+}
+
+@Composable
+private fun SortControl(
+    current: SortMode,
+    descending: Boolean,
+    onSelect: (SortMode) -> Unit,
+    onToggleDir: () -> Unit,
+) {
     var expanded by remember { mutableStateOf(false) }
     Box {
-        TextButton(onClick = { expanded = true }) {
+        TextButton(onClick = { expanded = true }, contentPadding = PaddingValues(horizontal = 8.dp)) {
             Text("Sort: ${current.label}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             SortMode.entries.forEach { mode ->
+                val selected = mode == current
                 DropdownMenuItem(
-                    text = { Text(mode.label) },
-                    onClick = { onSelect(mode); expanded = false },
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                mode.label,
+                                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+                            )
+                            if (selected) {
+                                Text(
+                                    if (descending) "↓" else "↑",
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(start = 8.dp),
+                                )
+                            }
+                        }
+                    },
+                    onClick = {
+                        if (selected) onToggleDir() else { onSelect(mode); expanded = false }
+                    },
                 )
             }
         }
