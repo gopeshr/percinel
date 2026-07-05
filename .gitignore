@@ -2,6 +2,7 @@
 app/tmdb.properties
 local.properties
 release.keystore
+keystore.properties
 *.jks
 
 # Build outputs

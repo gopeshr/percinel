@@ -12,6 +12,11 @@ val tmdbToken: String = Properties().apply {
     if (f.exists()) FileInputStream(f).use { load(it) }
 }.getProperty("TMDB_TOKEN", "").trim()
 
+val keystoreProps = Properties().apply {
+    val f = rootProject.file("keystore.properties")
+    if (f.exists()) FileInputStream(f).use { load(it) }
+}
+
 android {
     namespace = "gopesh.percinel"
     compileSdk = 34
@@ -30,9 +35,9 @@ android {
             val ks = rootProject.file("release.keystore")
             if (ks.exists()) {
                 storeFile = ks
-                storePassword = "percinel"
-                keyAlias = "percinel"
-                keyPassword = "percinel"
+                storePassword = keystoreProps.getProperty("storePassword", "")
+                keyAlias = keystoreProps.getProperty("keyAlias", "")
+                keyPassword = keystoreProps.getProperty("keyPassword", "")
             }
         }
     }
