@@ -88,10 +88,10 @@ fun PosterImage(posterUrl: String?, mediaType: String, modifier: Modifier = Modi
 
 @Composable
 fun RatingPill(rating: Double) {
-    Surface(color = Amber, shape = RoundedCornerShape(999.dp)) {
+    Surface(color = Silver, shape = RoundedCornerShape(999.dp)) {
         Text(
             formatRating(rating),
-            color = Color(0xFF201700),
+            color = Color(0xFF1B1A16),
             fontWeight = FontWeight.Bold,
             fontSize = 14.sp,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
