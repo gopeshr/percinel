@@ -1,10 +1,11 @@
-package ai.ligaments.percinel.data
+package gopesh.percinel.data
 
 import android.content.ContentValues
 import android.content.Context
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import java.util.UUID
 
 const val STATUS_WATCHED = "watched"
 const val STATUS_WATCHLIST = "watchlist"
@@ -20,14 +21,20 @@ data class Entry(
     val watchedAt: Long,
     val notes: String?,
     val status: String = STATUS_WATCHED,
+    // Sync identity: [uuid] is stable across devices/reinstalls; [updatedAt] drives
+    // newest-wins merge. Blank uuid / 0 updatedAt mean "not yet assigned" — the repo
+    // fills them on insert. Local autoincrement [id] is never synced.
+    val uuid: String = "",
+    val updatedAt: Long = 0L,
 )
 
-private class DbHelper(ctx: Context) : SQLiteOpenHelper(ctx, "percinel.db", null, 2) {
+private class DbHelper(ctx: Context) : SQLiteOpenHelper(ctx, "percinel.db", null, 3) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
             """
             CREATE TABLE entries(
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                uuid TEXT NOT NULL,
                 tmdb_id INTEGER NOT NULL,
                 media_type TEXT NOT NULL,
                 title TEXT NOT NULL,
@@ -36,16 +43,38 @@ private class DbHelper(ctx: Context) : SQLiteOpenHelper(ctx, "percinel.db", null
                 rating REAL NOT NULL,
                 watched_at INTEGER NOT NULL,
                 notes TEXT,
-                status TEXT NOT NULL DEFAULT '$STATUS_WATCHED'
+                status TEXT NOT NULL DEFAULT '$STATUS_WATCHED',
+                updated_at INTEGER NOT NULL DEFAULT 0
             )
             """.trimIndent()
         )
+        db.execSQL("CREATE UNIQUE INDEX idx_uuid ON entries(uuid)")
         db.execSQL("CREATE INDEX idx_watched ON entries(watched_at DESC)")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) {
             db.execSQL("ALTER TABLE entries ADD COLUMN status TEXT NOT NULL DEFAULT '$STATUS_WATCHED'")
+        }
+        if (oldVersion < 3) {
+            // Add sync columns, then backfill every existing row with a stable UUID and a
+            // fresh updated_at so the first cloud sync treats them as current, real records.
+            db.execSQL("ALTER TABLE entries ADD COLUMN uuid TEXT")
+            db.execSQL("ALTER TABLE entries ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0")
+
+            val now = System.currentTimeMillis()
+            val ids = ArrayList<Long>()
+            db.rawQuery("SELECT id FROM entries WHERE uuid IS NULL OR uuid = ''", null).use { c ->
+                while (c.moveToNext()) ids.add(c.getLong(0))
+            }
+            for (id in ids) {
+                val v = ContentValues().apply {
+                    put("uuid", UUID.randomUUID().toString())
+                    put("updated_at", now)
+                }
+                db.update("entries", v, "id = ?", arrayOf(id.toString()))
+            }
+            db.execSQL("CREATE UNIQUE INDEX idx_uuid ON entries(uuid)")
         }
     }
 }
@@ -76,6 +105,7 @@ class Repo(ctx: Context) {
             put("rating", rating)
             put("watched_at", watchedAt)
             put("notes", notes)
+            put("updated_at", System.currentTimeMillis())
         }
         helper.writableDatabase.update("entries", v, "id = ?", arrayOf(id.toString()))
     }
@@ -85,11 +115,19 @@ class Repo(ctx: Context) {
             .rawQuery("SELECT * FROM entries WHERE id = ?", arrayOf(id.toString()))
             .use { c -> if (c.moveToNext()) c.toEntry() else null }
 
-    fun insert(e: Entry): Long =
-        helper.writableDatabase.insert("entries", null, e.toValues())
+    fun insert(e: Entry): Long {
+        // Preserve an existing uuid/updatedAt (e.g. undo-restore of a synced row); otherwise
+        // mint fresh sync identity for a brand-new watch.
+        val withMeta = e.copy(
+            uuid = e.uuid.ifBlank { UUID.randomUUID().toString() },
+            updatedAt = if (e.updatedAt == 0L) System.currentTimeMillis() else e.updatedAt,
+        )
+        return helper.writableDatabase.insert("entries", null, withMeta.toValues())
+    }
 
     fun update(e: Entry) {
-        helper.writableDatabase.update("entries", e.toValues(), "id = ?", arrayOf(e.id.toString()))
+        val v = e.toValues().apply { put("updated_at", System.currentTimeMillis()) }
+        helper.writableDatabase.update("entries", v, "id = ?", arrayOf(e.id.toString()))
     }
 
     fun delete(id: Long) {
@@ -100,6 +138,36 @@ class Repo(ctx: Context) {
         helper.writableDatabase.delete("entries", null, null)
     }
 
+    /** Every row regardless of status — the full set to sync. */
+    fun allForSync(): List<Entry> {
+        val out = ArrayList<Entry>()
+        helper.readableDatabase.rawQuery("SELECT * FROM entries", null)
+            .use { c -> while (c.moveToNext()) out.add(c.toEntry()) }
+        return out
+    }
+
+    /** Apply a merged set to the local DB, keyed by uuid: insert new rows, update rows whose
+     *  incoming updatedAt is newer. Never deletes. */
+    fun applyMerge(merged: List<Entry>) {
+        val db = helper.writableDatabase
+        db.beginTransaction()
+        try {
+            for (e in merged) {
+                if (e.uuid.isBlank()) continue
+                val cur = db.rawQuery("SELECT id, updated_at FROM entries WHERE uuid = ?", arrayOf(e.uuid))
+                    .use { if (it.moveToNext()) it.getLong(0) to it.getLong(1) else null }
+                if (cur == null) {
+                    db.insert("entries", null, e.toValues())
+                } else if (e.updatedAt > cur.second) {
+                    db.update("entries", e.toValues(), "id = ?", arrayOf(cur.first.toString()))
+                }
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
     /** Attach TMDb identity to an entry (used to enrich a manual entry). Rating/date/notes untouched. */
     fun linkTmdb(id: Long, tmdbId: Long, mediaType: String, title: String, posterPath: String?, year: Int?) {
         val v = ContentValues().apply {
@@ -108,6 +176,7 @@ class Repo(ctx: Context) {
             put("title", title)
             put("poster_path", posterPath)
             put("year", year)
+            put("updated_at", System.currentTimeMillis())
         }
         helper.writableDatabase.update("entries", v, "id = ?", arrayOf(id.toString()))
     }
@@ -126,10 +195,13 @@ private fun Cursor.toEntry(): Entry {
         watchedAt = getLong(idx("watched_at")),
         notes = idx("notes").let { if (isNull(it)) null else getString(it) },
         status = idx("status").let { if (isNull(it)) STATUS_WATCHED else getString(it) },
+        uuid = idx("uuid").let { if (isNull(it)) "" else getString(it) },
+        updatedAt = getLong(idx("updated_at")),
     )
 }
 
 private fun Entry.toValues() = ContentValues().apply {
+    put("uuid", uuid)
     put("tmdb_id", tmdbId)
     put("media_type", mediaType)
     put("title", title)
@@ -139,4 +211,5 @@ private fun Entry.toValues() = ContentValues().apply {
     put("watched_at", watchedAt)
     put("notes", notes)
     put("status", status)
+    put("updated_at", updatedAt)
 }

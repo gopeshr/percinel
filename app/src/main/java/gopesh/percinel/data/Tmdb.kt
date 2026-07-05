@@ -1,6 +1,6 @@
-package ai.ligaments.percinel.data
+package gopesh.percinel.data
 
-import ai.ligaments.percinel.BuildConfig
+import gopesh.percinel.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject

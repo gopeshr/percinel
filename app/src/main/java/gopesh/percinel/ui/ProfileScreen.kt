@@ -1,8 +1,8 @@
-package ai.ligaments.percinel.ui
+package gopesh.percinel.ui
 
-import ai.ligaments.percinel.data.Entry
-import ai.ligaments.percinel.data.Repo
-import ai.ligaments.percinel.data.Tmdb
+import gopesh.percinel.data.Entry
+import gopesh.percinel.data.Repo
+import gopesh.percinel.data.Tmdb
 import android.content.Context
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement

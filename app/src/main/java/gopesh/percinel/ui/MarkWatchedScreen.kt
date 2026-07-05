@@ -1,8 +1,8 @@
-package ai.ligaments.percinel.ui
+package gopesh.percinel.ui
 
-import ai.ligaments.percinel.data.Entry
-import ai.ligaments.percinel.data.Repo
-import ai.ligaments.percinel.data.SearchResult
+import gopesh.percinel.data.Entry
+import gopesh.percinel.data.Repo
+import gopesh.percinel.data.SearchResult
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding

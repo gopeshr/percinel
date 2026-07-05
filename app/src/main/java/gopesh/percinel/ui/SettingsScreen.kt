@@ -1,9 +1,9 @@
-package ai.ligaments.percinel.ui
+package gopesh.percinel.ui
 
-import ai.ligaments.percinel.BuildConfig
-import ai.ligaments.percinel.data.Entry
-import ai.ligaments.percinel.data.Export
-import ai.ligaments.percinel.data.Repo
+import gopesh.percinel.BuildConfig
+import gopesh.percinel.data.Entry
+import gopesh.percinel.data.Export
+import gopesh.percinel.data.Repo
 import android.content.Context
 import android.content.Intent
 import android.widget.Toast
@@ -83,6 +83,23 @@ fun SettingsScreen(repo: Repo, onMenu: () -> Unit) {
         }
     }
 
+    // --- Cloud sync ---
+    var syncOn by remember { mutableStateOf(prefs.getBoolean("sync_on", false)) }
+    var lastSync by remember { mutableStateOf(prefs.getLong("last_sync", 0L)) }
+    var confirmSyncOff by remember { mutableStateOf(false) }
+
+    val cloud = rememberCloudSync(
+        repo = repo,
+        onDone = { res ->
+            syncOn = true
+            lastSync = System.currentTimeMillis()
+            prefs.edit().putBoolean("sync_on", true).putLong("last_sync", lastSync).apply()
+            Toast.makeText(context, "Synced · ${res.total} watches", Toast.LENGTH_SHORT).show()
+        },
+        onError = { msg -> Toast.makeText(context, msg, Toast.LENGTH_LONG).show() },
+    )
+    val syncing = cloud.syncing
+
     fun exportText(list: List<Entry>) {
         val text = buildString {
             appendLine("percinel — my watches")
@@ -132,6 +149,24 @@ fun SettingsScreen(repo: Repo, onMenu: () -> Unit) {
             HorizontalDivider(color = MaterialTheme.colorScheme.outline)
 
             ActionRow(
+                title = if (syncOn) "Sync now" else "Back up & sync",
+                subtitle = when {
+                    syncing -> "Syncing…"
+                    syncOn -> "On · synced ${relativeTime(lastSync)}"
+                    else -> "Save your watches to your Google Drive"
+                },
+                onClick = { if (!syncing) cloud.connect() },
+            )
+            if (syncOn) {
+                ActionRow(
+                    title = "Turn off sync",
+                    subtitle = "Stop backing up — your watches stay on this device",
+                    onClick = { confirmSyncOff = true },
+                )
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+
+            ActionRow(
                 title = "Export your watches",
                 subtitle = "Save or share as a spreadsheet or text",
                 onClick = { chooseExport = true },
@@ -146,7 +181,10 @@ fun SettingsScreen(repo: Repo, onMenu: () -> Unit) {
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outline)
 
-            InfoRow("Your data", "Everything stays on this device")
+            InfoRow(
+                "Your data",
+                if (syncOn) "On this device + your private Google Drive" else "Everything stays on this device",
+            )
             HorizontalDivider(color = MaterialTheme.colorScheme.outline)
             InfoRow("Version", BuildConfig.VERSION_NAME)
         }
@@ -231,6 +269,22 @@ fun SettingsScreen(repo: Repo, onMenu: () -> Unit) {
         )
     }
 
+    if (confirmSyncOff) {
+        AlertDialog(
+            onDismissRequest = { confirmSyncOff = false },
+            title = { Text("Turn off sync?") },
+            text = { Text("percinel will stop backing up to Google Drive. Your watches stay on this device, and your Drive backup is left untouched — turn sync back on any time to restore it.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmSyncOff = false
+                    syncOn = false
+                    prefs.edit().putBoolean("sync_on", false).apply()
+                }) { Text("Turn off") }
+            },
+            dismissButton = { TextButton(onClick = { confirmSyncOff = false }) { Text("Cancel") } },
+        )
+    }
+
     if (confirmClear) {
         AlertDialog(
             onDismissRequest = { confirmClear = false },
@@ -269,6 +323,17 @@ private fun ActionRow(
             )
             Text(subtitle, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
         }
+    }
+}
+
+private fun relativeTime(epoch: Long): String {
+    if (epoch <= 0L) return "just now"
+    val diff = System.currentTimeMillis() - epoch
+    return when {
+        diff < 60_000 -> "just now"
+        diff < 3_600_000 -> "${diff / 60_000}m ago"
+        diff < 86_400_000 -> "${diff / 3_600_000}h ago"
+        else -> "${diff / 86_400_000}d ago"
     }
 }
 

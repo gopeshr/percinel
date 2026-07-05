@@ -29,6 +29,6 @@ fi
 for D in $DEVICES; do
   echo "→ installing on $D…"
   "$ADB" -s "$D" install -r "$APK"
-  "$ADB" -s "$D" shell am start -n ai.ligaments.percinel/.MainActivity >/dev/null
+  "$ADB" -s "$D" shell am start -n gopesh.percinel/.MainActivity >/dev/null
 done
 echo "✓ deployed $(du -h "$APK" | cut -f1 | tr -d ' ') APK"

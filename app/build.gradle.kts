@@ -13,15 +13,15 @@ val tmdbToken: String = Properties().apply {
 }.getProperty("TMDB_TOKEN", "").trim()
 
 android {
-    namespace = "ai.ligaments.percinel"
+    namespace = "gopesh.percinel"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "ai.ligaments.percinel"
+        applicationId = "gopesh.percinel"
         minSdk = 26
         targetSdk = 34
-        versionCode = 27
-        versionName = "1.15"
+        versionCode = 30
+        versionName = "1.18"
         buildConfigField("String", "TMDB_TOKEN", "\"$tmdbToken\"")
     }
 
@@ -78,4 +78,10 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
 
     implementation("io.coil-kt:coil-compose:2.7.0")
+
+    // Native Google account picker + Drive-scope authorization (token only; Drive I/O is REST).
+    implementation("com.google.android.gms:play-services-auth:21.2.0")
+
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }

@@ -1,4 +1,4 @@
-package ai.ligaments.percinel.ui
+package gopesh.percinel.ui
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme

@@ -1,8 +1,8 @@
-package ai.ligaments.percinel.ui
+package gopesh.percinel.ui
 
-import ai.ligaments.percinel.data.Entry
-import ai.ligaments.percinel.data.Repo
-import ai.ligaments.percinel.data.Tmdb
+import gopesh.percinel.data.Entry
+import gopesh.percinel.data.Repo
+import gopesh.percinel.data.Tmdb
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -65,6 +65,7 @@ import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -127,6 +128,16 @@ fun App() {
     val context = LocalContext.current
     val repo = remember { Repo(context) }
     val scope = rememberCoroutineScope()
+    val prefs = remember { context.getSharedPreferences("percinel", android.content.Context.MODE_PRIVATE) }
+
+    // First-run onboarding: show until completed. Existing users (name already set) skip it.
+    var onboarded by remember {
+        mutableStateOf(prefs.getBoolean("onboarded", false) || !prefs.getString("name", "").isNullOrBlank())
+    }
+    if (!onboarded) {
+        OnboardingScreen(repo = repo, onDone = { onboarded = true })
+        return
+    }
 
     var section by remember { mutableStateOf(Section.WATCHES) }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
@@ -139,6 +150,25 @@ fun App() {
         if (section == Section.WATCHES && screen is Screen.Home) {
             entries = withContext(Dispatchers.IO) { repo.list() }
         }
+    }
+
+    // Automatic background sync: pull on foreground, push on background — silent, best-effort.
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_START ||
+                event == androidx.lifecycle.Lifecycle.Event.ON_STOP
+            ) {
+                scope.launch {
+                    val result = autoSync(context, repo)
+                    if (result != null) {
+                        entries = withContext(Dispatchers.IO) { repo.list() }
+                    }
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     BackHandler(enabled = section != Section.WATCHES) { section = Section.WATCHES }
@@ -194,12 +224,12 @@ private fun DrawerSheet(current: Section, onSelect: (Section) -> Unit) {
                 Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)),
             ) {
                 Image(
-                    painter = painterResource(ai.ligaments.percinel.R.drawable.ic_launcher_background),
+                    painter = painterResource(gopesh.percinel.R.drawable.ic_launcher_background),
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
                 )
                 Image(
-                    painter = painterResource(ai.ligaments.percinel.R.drawable.ic_launcher_foreground),
+                    painter = painterResource(gopesh.percinel.R.drawable.ic_launcher_foreground),
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -650,7 +680,7 @@ private fun HomeScreen(
 }
 
 @Composable
-private fun Wordmark() {
+internal fun Wordmark(fontSize: androidx.compose.ui.unit.TextUnit = 22.sp) {
     val muted = Color(0xFF6F6B63)
     Text(
         buildAnnotatedString {
@@ -658,7 +688,7 @@ private fun Wordmark() {
             withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)) { append("CINE") }
             withStyle(SpanStyle(color = muted, fontWeight = FontWeight.Normal)) { append("l") }
         },
-        fontSize = 22.sp,
+        fontSize = fontSize,
         letterSpacing = 0.5.sp,
     )
 }
