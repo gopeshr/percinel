@@ -9,12 +9,15 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -187,6 +190,30 @@ fun SettingsScreen(repo: Repo, onMenu: () -> Unit) {
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outline)
             InfoRow("Version", BuildConfig.VERSION_NAME)
+
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 28.dp)
+                    .clickable {
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.themoviedb.org/")),
+                        )
+                    },
+            ) {
+                Image(
+                    painter = painterResource(gopesh.percinel.R.drawable.tmdb_logo),
+                    contentDescription = "The Movie Database",
+                    modifier = Modifier.height(12.dp),
+                )
+                Text(
+                    "This product uses the TMDB API but is not endorsed or certified by TMDB.",
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    modifier = Modifier.padding(top = 10.dp),
+                )
+            }
         }
     }
 
