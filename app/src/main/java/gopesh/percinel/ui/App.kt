@@ -3,6 +3,9 @@ package gopesh.percinel.ui
 import gopesh.percinel.data.Entry
 import gopesh.percinel.data.Repo
 import gopesh.percinel.data.Tmdb
+import gopesh.percinel.data.UpdateChecker
+import gopesh.percinel.data.UpdateInfo
+import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -28,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Menu
@@ -35,6 +39,8 @@ import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.DropdownMenu
@@ -54,6 +60,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -153,6 +160,13 @@ fun App() {
         }
     }
 
+    // Check GitHub for a newer release once per launch; a dismissible banner shows on the home list.
+    var update by remember { mutableStateOf<UpdateInfo?>(null) }
+    LaunchedEffect(Unit) {
+        val u = UpdateChecker.check()
+        if (u != null && u.version != prefs.getString("update_dismissed", "")) update = u
+    }
+
     // Automatic background sync: pull on foreground, push on background — silent, best-effort.
     val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -202,6 +216,11 @@ fun App() {
                 onScreen = { screen = it },
                 onEntries = { entries = it },
                 onMenu = { openDrawer() },
+                update = update,
+                onDismissUpdate = {
+                    prefs.edit().putString("update_dismissed", update?.version).apply()
+                    update = null
+                },
             )
         }
     }
@@ -278,11 +297,15 @@ private fun WatchesFlow(
     onScreen: (Screen) -> Unit,
     onEntries: (List<Entry>) -> Unit,
     onMenu: () -> Unit,
+    update: UpdateInfo? = null,
+    onDismissUpdate: () -> Unit = {},
 ) {
     when (val s = screen) {
         Screen.Home -> HomeScreen(
             entries = entries,
             onMenu = onMenu,
+            update = update,
+            onDismissUpdate = onDismissUpdate,
             onAdd = { onScreen(Screen.Add) },
             onOpen = { onScreen(Screen.Entry(it)) },
             onDelete = { list ->
@@ -458,6 +481,8 @@ private fun HomeScreen(
     onOpen: (Long) -> Unit,
     onDelete: (List<Entry>) -> Unit,
     onUndo: (List<Entry>) -> Unit,
+    update: UpdateInfo? = null,
+    onDismissUpdate: () -> Unit = {},
 ) {
     var query by remember { mutableStateOf("") }
     var sortMode by remember { mutableStateOf(SortMode.RECENT) }
@@ -578,6 +603,9 @@ private fun HomeScreen(
         }
 
         Column(Modifier.padding(padding).fillMaxSize()) {
+            if (update != null) {
+                UpdateBanner(update = update, onDismiss = onDismissUpdate)
+            }
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
@@ -676,6 +704,74 @@ private fun HomeScreen(
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun UpdateBanner(update: UpdateInfo, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.Top) {
+                Box(
+                    Modifier
+                        .size(34.dp)
+                        .background(MaterialTheme.colorScheme.background, RoundedCornerShape(10.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Filled.Download,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+                Column(Modifier.weight(1f).padding(start = 11.dp)) {
+                    Text("Update available", fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                    Text(
+                        "Version ${update.version}",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(top = 1.dp),
+                    )
+                }
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = "Dismiss",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp).clickable(onClick = onDismiss),
+                )
+            }
+
+            Text(
+                update.notes.ifBlank { "A new version is ready to install." },
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 9.dp, bottom = 12.dp, start = 2.dp, end = 2.dp),
+            )
+
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Button(
+                    onClick = {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(update.downloadUrl)))
+                    },
+                    shape = RoundedCornerShape(50),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                    ),
+                ) {
+                    Text("Update now", fontWeight = FontWeight.Medium)
                 }
             }
         }

@@ -22,7 +22,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -369,18 +368,15 @@ fun EntryForm(
         SectionLabel("Watched on", top = 24.dp)
         DateTimeRow(millis = watchedAt, onChange = onWatchedAt)
 
-        val dictateNotes = rememberDictate("Speak your notes") { spoken ->
-            onNotes(listOf(notes.trim(), spoken).filter { it.isNotEmpty() }.joinToString(" "))
-        }
         SectionLabel("Notes", top = 24.dp)
         OutlinedTextField(
             value = notes,
             onValueChange = onNotes,
             placeholder = { Text("Any thoughts? Tap the mic to dictate.") },
             trailingIcon = {
-                IconButton(onClick = dictateNotes) {
-                    Icon(Icons.Filled.Mic, contentDescription = "Dictate notes", tint = MaterialTheme.colorScheme.primary)
-                }
+                DictationButton(onText = { spoken ->
+                    onNotes(listOf(notes.trim(), spoken).filter { it.isNotEmpty() }.joinToString(" "))
+                })
             },
             modifier = Modifier.fillMaxWidth(),
             minLines = 3,
@@ -471,18 +467,15 @@ private fun ManualForm(
         SectionLabel("Watched on", top = 24.dp)
         DateTimeRow(millis = watchedAt, onChange = onWatchedAt)
 
-        val dictateNotes = rememberDictate("Speak your notes") { spoken ->
-            onNotes(listOf(notes.trim(), spoken).filter { it.isNotEmpty() }.joinToString(" "))
-        }
         SectionLabel("Notes", top = 24.dp)
         OutlinedTextField(
             value = notes,
             onValueChange = onNotes,
             placeholder = { Text("Any thoughts? Tap the mic to dictate.") },
             trailingIcon = {
-                IconButton(onClick = dictateNotes) {
-                    Icon(Icons.Filled.Mic, contentDescription = "Dictate notes", tint = MaterialTheme.colorScheme.primary)
-                }
+                DictationButton(onText = { spoken ->
+                    onNotes(listOf(notes.trim(), spoken).filter { it.isNotEmpty() }.joinToString(" "))
+                })
             },
             modifier = Modifier.fillMaxWidth(),
             minLines = 3,
