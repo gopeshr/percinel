@@ -138,6 +138,18 @@ class Repo(ctx: Context) {
         helper.writableDatabase.delete("entries", null, null)
     }
 
+    /** All watched viewings of the same film (by TMDb id), newest first. Manual entries (no
+     *  tmdbId) can't be grouped reliably, so they stand alone. */
+    fun viewingsFor(entry: Entry): List<Entry> {
+        if (entry.tmdbId == 0L) return listOf(entry)
+        val out = ArrayList<Entry>()
+        helper.readableDatabase.rawQuery(
+            "SELECT * FROM entries WHERE status = ? AND tmdb_id = ? AND media_type = ? ORDER BY watched_at DESC, id DESC",
+            arrayOf(STATUS_WATCHED, entry.tmdbId.toString(), entry.mediaType),
+        ).use { c -> while (c.moveToNext()) out.add(c.toEntry()) }
+        return out
+    }
+
     /** Every row regardless of status — the full set to sync. */
     fun allForSync(): List<Entry> {
         val out = ArrayList<Entry>()

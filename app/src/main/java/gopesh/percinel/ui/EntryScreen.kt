@@ -3,24 +3,30 @@ package gopesh.percinel.ui
 import gopesh.percinel.data.Entry
 import gopesh.percinel.data.Repo
 import gopesh.percinel.data.Tmdb
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -51,12 +57,20 @@ fun EntryScreen(
     onEdit: () -> Unit,
     onAbout: () -> Unit,
     onFindTmdb: () -> Unit,
+    onLogAnother: (() -> Unit)? = null,
+    onOpenViewing: (Long) -> Unit = {},
 ) {
     var entry by remember { mutableStateOf<Entry?>(null) }
+    var others by remember { mutableStateOf<List<Entry>>(emptyList()) }
 
     LaunchedEffect(id) {
         val e = withContext(Dispatchers.IO) { repo.get(id) }
-        if (e == null) onBack() else entry = e
+        if (e == null) {
+            onBack()
+        } else {
+            entry = e
+            others = withContext(Dispatchers.IO) { repo.viewingsFor(e).filter { it.id != e.id } }
+        }
     }
 
     Scaffold(
@@ -140,6 +154,44 @@ fun EntryScreen(
                     fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+
+            if (onLogAnother != null) {
+                OutlinedButton(
+                    onClick = onLogAnother,
+                    modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary),
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Log another watch", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                }
+            }
+
+            if (others.isNotEmpty()) {
+                Label("Other watches", top = 24.dp)
+                others.forEach { v ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable { onOpenViewing(v.id) }.padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            formatRating(v.rating),
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            "  ·  ${formatListDate(v.watchedAt)}",
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text("›", fontSize = 20.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
             }
 
             if (e.tmdbId != 0L) {

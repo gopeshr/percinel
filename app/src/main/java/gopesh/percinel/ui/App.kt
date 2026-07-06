@@ -104,7 +104,11 @@ private sealed interface Screen {
     data class About(val id: Long) : Screen
     data class Edit(val id: Long) : Screen
     data class Match(val id: Long) : Screen
+    data class AddViewing(val id: Long) : Screen
 }
+
+/** A film in the Watches list: its viewings collapsed into one card (latest shown, all kept). */
+private data class FilmGroup(val key: String, val latest: Entry, val viewings: List<Entry>)
 
 private enum class SortMode(val label: String) { RECENT("Recent"), RATING("Rating"), TITLE("Title") }
 private enum class TypeFilter(val label: String, val mediaType: String?) {
@@ -336,6 +340,13 @@ private fun WatchesFlow(
             onEdit = { onScreen(Screen.Edit(s.id)) },
             onAbout = { onScreen(Screen.About(s.id)) },
             onFindTmdb = { onScreen(Screen.Match(s.id)) },
+            onLogAnother = { onScreen(Screen.AddViewing(s.id)) },
+            onOpenViewing = { onScreen(Screen.Entry(it)) },
+        )
+        is Screen.AddViewing -> AddViewingScreen(
+            repo = repo,
+            id = s.id,
+            onDone = { onScreen(Screen.Home) },
         )
         is Screen.About -> AboutScreen(
             repo = repo,
@@ -460,6 +471,7 @@ private fun StatsFlow(
             onEdit = { st = StScreen.Edit(s.id) },
             onAbout = { st = StScreen.About(s.id) },
             onFindTmdb = { st = StScreen.Match(s.id) },
+            onOpenViewing = { st = StScreen.Entry(it) },
         )
         is StScreen.About -> AboutScreen(
             repo = repo,
@@ -499,11 +511,11 @@ private fun HomeScreen(
     val scope = rememberCoroutineScope()
 
     var selectionMode by remember { mutableStateOf(false) }
-    var selected by remember { mutableStateOf(setOf<Long>()) }
+    var selected by remember { mutableStateOf(setOf<String>()) }
 
     fun exitSelection() { selectionMode = false; selected = emptySet() }
-    fun toggle(id: Long) {
-        selected = if (id in selected) selected - id else selected + id
+    fun toggle(key: String) {
+        selected = if (key in selected) selected - key else selected + key
         if (selected.isEmpty()) selectionMode = false
     }
 
@@ -527,10 +539,17 @@ private fun HomeScreen(
         val filtered = entries
             .filter { typeFilter.mediaType == null || it.mediaType == typeFilter.mediaType }
             .filter { query.isBlank() || it.title.contains(query.trim(), ignoreCase = true) }
+        // One card per film: group viewings by TMDb id (manual entries stay standalone).
+        val films = filtered
+            .groupBy { e -> if (e.tmdbId != 0L) "t:${e.mediaType}:${e.tmdbId}" else "m:${e.id}" }
+            .map { (key, viewings) ->
+                val ordered = viewings.sortedByDescending { it.watchedAt }
+                FilmGroup(key = key, latest = ordered.first(), viewings = ordered)
+            }
         val ascending = when (sortMode) {
-            SortMode.RECENT -> filtered.sortedBy { it.watchedAt }
-            SortMode.RATING -> filtered.sortedBy { it.rating }
-            SortMode.TITLE -> filtered.sortedBy { it.title.lowercase() }
+            SortMode.RECENT -> films.sortedBy { it.latest.watchedAt }
+            SortMode.RATING -> films.sortedBy { it.latest.rating }
+            SortMode.TITLE -> films.sortedBy { it.latest.title.lowercase() }
         }
         if (descending) ascending.reversed() else ascending
     }
@@ -548,9 +567,9 @@ private fun HomeScreen(
                         }
                     },
                     actions = {
-                        val allIds = displayed.map { it.id }.toSet()
-                        val allSelected = allIds.isNotEmpty() && selected.containsAll(allIds)
-                        TextButton(onClick = { selected = if (allSelected) emptySet() else allIds }) {
+                        val allKeys = displayed.map { it.key }.toSet()
+                        val allSelected = allKeys.isNotEmpty() && selected.containsAll(allKeys)
+                        TextButton(onClick = { selected = if (allSelected) emptySet() else allKeys }) {
                             Text(
                                 if (allSelected) "Clear" else "All",
                                 color = MaterialTheme.colorScheme.onBackground,
@@ -558,7 +577,7 @@ private fun HomeScreen(
                             )
                         }
                         TextButton(onClick = {
-                            val items = entries.filter { it.id in selected }
+                            val items = displayed.filter { it.key in selected }.flatMap { it.viewings }
                             exitSelection()
                             removeWithUndo(items)
                         }) {
@@ -662,21 +681,22 @@ private fun HomeScreen(
                 }
             } else {
                 LazyColumn(contentPadding = PaddingValues(vertical = 8.dp)) {
-                    items(displayed, key = { it.id }) { entry ->
-                        val isSelected = entry.id in selected
+                    items(displayed, key = { it.key }) { film ->
+                        val isSelected = film.key in selected
                         if (selectionMode) {
                             EntryRow(
-                                entry = entry,
+                                entry = film.latest,
+                                rewatchCount = film.viewings.size,
                                 selected = isSelected,
                                 selectionMode = true,
-                                onClick = { toggle(entry.id) },
+                                onClick = { toggle(film.key) },
                                 onLongClick = {},
                             )
                         } else {
                             val dismissState = rememberSwipeToDismissBoxState(
                                 confirmValueChange = { value ->
                                     if (value == SwipeToDismissBoxValue.EndToStart) {
-                                        removeWithUndo(listOf(entry)); true
+                                        removeWithUndo(film.viewings); true
                                     } else false
                                 },
                             )
@@ -701,11 +721,12 @@ private fun HomeScreen(
                             ) {
                                 Box(Modifier.background(MaterialTheme.colorScheme.background)) {
                                     EntryRow(
-                                        entry = entry,
+                                        entry = film.latest,
+                                        rewatchCount = film.viewings.size,
                                         selected = false,
                                         selectionMode = false,
-                                        onClick = { onOpen(entry.id) },
-                                        onLongClick = { selectionMode = true; selected = setOf(entry.id) },
+                                        onClick = { onOpen(film.latest.id) },
+                                        onLongClick = { selectionMode = true; selected = setOf(film.key) },
                                     )
                                 }
                             }
@@ -851,6 +872,7 @@ private fun EntryRow(
     selectionMode: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    rewatchCount: Int = 1,
 ) {
     Row(
         modifier = Modifier
@@ -891,12 +913,21 @@ private fun EntryRow(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                formatListDate(entry.watchedAt),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 13.sp,
-                modifier = Modifier.padding(top = 4.dp),
-            )
+            Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    formatListDate(entry.watchedAt),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                )
+                if (rewatchCount > 1) {
+                    Text(
+                        "  ·  watched ${rewatchCount}×",
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+            }
         }
         RatingPill(entry.rating)
     }
