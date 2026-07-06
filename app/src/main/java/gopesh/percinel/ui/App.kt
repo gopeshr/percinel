@@ -376,9 +376,16 @@ private fun WatchlistFlow(
             onAdd = { wscreen = WlScreen.Add },
             onOpen = { wscreen = WlScreen.About(it) },
             onMarkWatched = { wscreen = WlScreen.MarkWatched(it) },
-            onRemove = { e ->
-                items = items.filterNot { it.id == e.id }
-                scope.launch { withContext(Dispatchers.IO) { repo.delete(e.id) } }
+            onRemove = { list ->
+                val ids = list.map { it.id }.toSet()
+                items = items.filterNot { it.id in ids }
+                scope.launch { withContext(Dispatchers.IO) { list.forEach { repo.delete(it.id) } } }
+            },
+            onUndo = { list ->
+                scope.launch {
+                    withContext(Dispatchers.IO) { list.forEach { repo.insert(it) } }
+                    items = withContext(Dispatchers.IO) { repo.watchlist() }
+                }
             },
         )
         is WlScreen.About -> AboutScreen(
