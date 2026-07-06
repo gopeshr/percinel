@@ -5,7 +5,9 @@ import gopesh.percinel.data.Repo
 import gopesh.percinel.data.Tmdb
 import gopesh.percinel.data.UpdateChecker
 import gopesh.percinel.data.UpdateInfo
+import gopesh.percinel.data.Updater
 import android.content.Intent
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -42,6 +44,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -741,6 +744,28 @@ private fun HomeScreen(
 @Composable
 private fun UpdateBanner(update: UpdateInfo, onDismiss: () -> Unit) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var downloading by remember { mutableStateOf(false) }
+
+    fun getUpdate() {
+        if (!Updater.canInstall(context)) {
+            Toast.makeText(context, "Allow percinel to install updates, then tap again", Toast.LENGTH_LONG).show()
+            Updater.openInstallPermissionSettings(context)
+            return
+        }
+        downloading = true
+        scope.launch {
+            try {
+                val apk = Updater.download(context, update.downloadUrl)
+                Updater.install(context, apk)
+            } catch (e: Exception) {
+                Toast.makeText(context, "Couldn't download the update. Try again.", Toast.LENGTH_SHORT).show()
+            } finally {
+                downloading = false
+            }
+        }
+    }
+
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant,
         shape = RoundedCornerShape(12.dp),
@@ -790,16 +815,23 @@ private fun UpdateBanner(update: UpdateInfo, onDismiss: () -> Unit) {
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 Button(
-                    onClick = {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(update.downloadUrl)))
-                    },
+                    onClick = { if (!downloading) getUpdate() },
                     shape = RoundedCornerShape(50),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = MaterialTheme.colorScheme.onPrimary,
                     ),
                 ) {
-                    Text("Update now", fontWeight = FontWeight.Medium)
+                    if (downloading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                        )
+                        Text("  Downloading…", fontWeight = FontWeight.Medium)
+                    } else {
+                        Text("Update now", fontWeight = FontWeight.Medium)
+                    }
                 }
             }
         }
