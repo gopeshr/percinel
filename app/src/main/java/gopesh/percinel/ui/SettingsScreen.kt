@@ -9,8 +9,10 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -49,7 +51,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun SettingsScreen(repo: Repo, onMenu: () -> Unit) {
     val context = LocalContext.current
@@ -189,7 +191,33 @@ fun SettingsScreen(repo: Repo, onMenu: () -> Unit) {
                 if (syncOn) "On this device + your private Google Drive" else "Everything stays on this device",
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outline)
-            InfoRow("Version", BuildConfig.VERSION_NAME)
+            // Long-press the version to toggle a hidden "test update" mode (forces the update
+            // banner on next launch, so the download/install flow can be tested without releasing).
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .combinedClickable(
+                        onClick = {},
+                        onLongClick = {
+                            val on = !prefs.getBoolean("dev_force_update", false)
+                            prefs.edit().putBoolean("dev_force_update", on).apply()
+                            Toast.makeText(
+                                context,
+                                if (on) "Update testing ON — reopen the app" else "Update testing off",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        },
+                    )
+                    .padding(vertical = 16.dp),
+            ) {
+                Text("Version", fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                Text(
+                    BuildConfig.VERSION_NAME,
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
 
             Column(
                 Modifier

@@ -17,7 +17,9 @@ data class UpdateInfo(val version: String, val downloadUrl: String, val notes: S
 object UpdateChecker {
     private const val LATEST = "https://api.github.com/repos/gopeshr/percinel/releases/latest"
 
-    suspend fun check(): UpdateInfo? = withContext(Dispatchers.IO) {
+    /** @param force when true, treat the latest release as an update even if it isn't newer
+     *  (used by the hidden "test update" dev toggle). */
+    suspend fun check(force: Boolean = false): UpdateInfo? = withContext(Dispatchers.IO) {
         try {
             val conn = (URL(LATEST).openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
@@ -30,7 +32,7 @@ object UpdateChecker {
             if (conn.responseCode != 200) return@withContext null
             val o = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
             val tag = o.optString("tag_name").removePrefix("v").trim()
-            if (tag.isEmpty() || !isNewer(tag, BuildConfig.VERSION_NAME)) return@withContext null
+            if (tag.isEmpty() || (!force && !isNewer(tag, BuildConfig.VERSION_NAME))) return@withContext null
 
             // Prefer the direct .apk asset; fall back to the release page.
             var url = o.optString("html_url")
@@ -65,8 +67,8 @@ object UpdateChecker {
         return s
     }
 
-    /** Dotted numeric compare, e.g. "1.24" > "1.23". */
-    private fun isNewer(remote: String, local: String): Boolean {
+    /** Dotted numeric compare, e.g. "1.24" > "1.23". Internal so it can be unit-tested. */
+    internal fun isNewer(remote: String, local: String): Boolean {
         val r = remote.split(".").map { it.trim().toIntOrNull() ?: 0 }
         val l = local.split(".").map { it.trim().toIntOrNull() ?: 0 }
         for (i in 0 until maxOf(r.size, l.size)) {

@@ -170,8 +170,9 @@ fun App() {
     // Check GitHub for a newer release once per launch; a dismissible banner shows on the home list.
     var update by remember { mutableStateOf<UpdateInfo?>(null) }
     LaunchedEffect(Unit) {
-        val u = UpdateChecker.check()
-        if (u != null && u.version != prefs.getString("update_dismissed", "")) update = u
+        val force = prefs.getBoolean("dev_force_update", false)
+        val u = UpdateChecker.check(force)
+        if (u != null && (force || u.version != prefs.getString("update_dismissed", ""))) update = u
     }
 
     // Automatic background sync: pull on foreground, push on background — silent, best-effort.
