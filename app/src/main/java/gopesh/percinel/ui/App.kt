@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Close
@@ -103,7 +104,7 @@ private enum class TypeFilter(val label: String, val mediaType: String?) {
     ALL("All", null), MOVIES("Movies", "movie"), SERIES("Series", "tv")
 }
 private enum class Section(val label: String) {
-    WATCHES("Watches"), WATCHLIST("Watchlist"), STATS("Stats"), PROFILE("You"), SETTINGS("Settings")
+    WATCHES("Watches"), WATCHLIST("Watchlist"), FORYOU("For you"), STATS("Stats"), PROFILE("You"), SETTINGS("Settings")
 }
 
 private sealed interface WlScreen {
@@ -188,6 +189,7 @@ fun App() {
         },
     ) {
         when (section) {
+            Section.FORYOU -> ForYouScreen(repo = repo, onMenu = { openDrawer() })
             Section.STATS -> StatsFlow(repo = repo, scope = scope, onMenu = { openDrawer() })
             Section.PROFILE -> ProfileScreen(repo = repo, onMenu = { openDrawer() })
             Section.SETTINGS -> SettingsScreen(repo = repo, onMenu = { openDrawer() })
@@ -208,6 +210,7 @@ fun App() {
 private fun sectionIcon(s: Section): androidx.compose.ui.graphics.vector.ImageVector = when (s) {
     Section.WATCHES -> Icons.Filled.Movie
     Section.WATCHLIST -> Icons.Filled.BookmarkBorder
+    Section.FORYOU -> Icons.Filled.AutoAwesome
     Section.STATS -> Icons.Filled.BarChart
     Section.PROFILE -> Icons.Filled.Person
     Section.SETTINGS -> Icons.Filled.Settings

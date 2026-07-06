@@ -3,6 +3,7 @@ package gopesh.percinel.ui
 import gopesh.percinel.data.Details
 import gopesh.percinel.data.Entry
 import gopesh.percinel.data.Repo
+import gopesh.percinel.data.SearchResult
 import gopesh.percinel.data.Tmdb
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -31,6 +32,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -56,27 +58,96 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+/** Details for a watch already in the diary (loaded by id). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AboutScreen(repo: Repo, id: Long, onBack: () -> Unit, onMarkWatched: (() -> Unit)? = null) {
     var entry by remember { mutableStateOf<Entry?>(null) }
-    var details by remember { mutableStateOf<Details?>(null) }
 
     LaunchedEffect(id) {
         val e = withContext(Dispatchers.IO) { repo.get(id) }
-        if (e == null) { onBack(); return@LaunchedEffect }
-        entry = e
-        if (e.tmdbId != 0L) {
-            try {
-                details = Tmdb.details(e.mediaType, e.tmdbId)
-            } catch (c: CancellationException) {
-                throw c
-            } catch (_: Exception) {
-                // Offline or fetch failed — show what we have.
+        if (e == null) onBack() else entry = e
+    }
+
+    DetailScaffold(onBack = onBack) { padding ->
+        val e = entry
+        if (e == null) {
+            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                Text("Loading…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            return@DetailScaffold
+        }
+        DetailBody(
+            padding = padding,
+            mediaType = e.mediaType,
+            tmdbId = e.tmdbId,
+            title = e.title,
+            posterPath = e.posterPath,
+            year = e.year,
+        ) {
+            if (onMarkWatched != null) {
+                Button(
+                    onClick = onMarkWatched,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                    ),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 18.dp),
+                ) {
+                    Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text("  Mark as watched", fontWeight = FontWeight.SemiBold)
+                }
             }
         }
     }
+}
 
+/** Details for a TMDB title that isn't in the diary yet (e.g. a recommendation). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TitleDetailScreen(
+    item: SearchResult,
+    onBack: () -> Unit,
+    added: Boolean,
+    onAddWatchlist: () -> Unit,
+) {
+    DetailScaffold(onBack = onBack) { padding ->
+        DetailBody(
+            padding = padding,
+            mediaType = item.mediaType,
+            tmdbId = item.tmdbId,
+            title = item.title,
+            posterPath = item.posterPath,
+            year = item.year,
+        ) {
+            if (added) {
+                OutlinedButton(
+                    onClick = {},
+                    enabled = false,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 18.dp),
+                ) {
+                    Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text("  On your watchlist", fontWeight = FontWeight.SemiBold)
+                }
+            } else {
+                Button(
+                    onClick = onAddWatchlist,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                    ),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 18.dp),
+                ) {
+                    Text("+ Add to watchlist", fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DetailScaffold(onBack: () -> Unit, content: @Composable (PaddingValues) -> Unit) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -93,130 +164,132 @@ fun AboutScreen(repo: Repo, id: Long, onBack: () -> Unit, onMarkWatched: (() -> 
                 ),
             )
         },
-    ) { padding ->
-        val e = entry
-        if (e == null) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text("Loading…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        content = content,
+    )
+}
+
+@Composable
+private fun DetailBody(
+    padding: PaddingValues,
+    mediaType: String,
+    tmdbId: Long,
+    title: String,
+    posterPath: String?,
+    year: Int?,
+    action: @Composable () -> Unit = {},
+) {
+    var details by remember(tmdbId, mediaType) { mutableStateOf<Details?>(null) }
+    LaunchedEffect(tmdbId, mediaType) {
+        if (tmdbId != 0L) {
+            try {
+                details = Tmdb.details(mediaType, tmdbId)
+            } catch (c: CancellationException) {
+                throw c
+            } catch (_: Exception) {
+                // Offline or fetch failed — show what we have.
             }
-            return@Scaffold
+        }
+    }
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(top = padding.calculateTopPadding())
+            .verticalScroll(rememberScrollState()),
+    ) {
+        val backdrop = Tmdb.backdropUrl(details?.backdropPath)
+        if (backdrop != null) {
+            Box(Modifier.fillMaxWidth().height(200.dp)) {
+                AsyncImage(
+                    model = backdrop,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                Box(
+                    Modifier.fillMaxSize().background(
+                        Brush.verticalGradient(
+                            0f to Color.Transparent,
+                            1f to MaterialTheme.colorScheme.background,
+                        ),
+                    ),
+                )
+            }
         }
 
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(top = padding.calculateTopPadding())
-                .verticalScroll(rememberScrollState()),
-        ) {
-            val backdrop = Tmdb.backdropUrl(details?.backdropPath)
-            if (backdrop != null) {
-                Box(Modifier.fillMaxWidth().height(200.dp)) {
-                    AsyncImage(
-                        model = backdrop,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                    Box(
-                        Modifier.fillMaxSize().background(
-                            Brush.verticalGradient(
-                                0f to Color.Transparent,
-                                1f to MaterialTheme.colorScheme.background,
-                            )
-                        )
-                    )
-                }
-            }
-
-            Row(Modifier.padding(horizontal = 20.dp).padding(top = if (backdrop != null) 0.dp else 8.dp)) {
-                PosterImage(
-                    posterUrl = Tmdb.posterUrl(e.posterPath, "w342"),
-                    mediaType = e.mediaType,
-                    modifier = Modifier.size(width = 96.dp, height = 144.dp),
-                )
-                Column(Modifier.padding(start = 14.dp)) {
-                    Text(e.title, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                    Text(
-                        buildString {
-                            append(if (e.mediaType == "tv") "Series" else "Movie")
-                            if (e.year != null) append(" · ${e.year}")
-                            details?.runtimeText?.let { append(" · $it") }
-                        },
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 13.sp,
-                        modifier = Modifier.padding(top = 4.dp),
-                    )
-                    details?.genres?.takeIf { it.isNotEmpty() }?.let {
-                        Text(
-                            it.take(3).joinToString(" · "),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp,
-                            modifier = Modifier.padding(top = 6.dp),
-                        )
-                    }
-                }
-            }
-
-            if (onMarkWatched != null) {
-                Button(
-                    onClick = onMarkWatched,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp)
-                        .padding(top = 18.dp),
-                ) {
-                    Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Text("  Mark as watched", fontWeight = FontWeight.SemiBold)
-                }
-            }
-
-            details?.overview?.takeIf { it.isNotBlank() }?.let { overview ->
-                SectionHeader("Synopsis")
+        Row(Modifier.padding(horizontal = 20.dp).padding(top = if (backdrop != null) 0.dp else 8.dp)) {
+            PosterImage(
+                posterUrl = Tmdb.posterUrl(posterPath, "w342"),
+                mediaType = mediaType,
+                modifier = Modifier.size(width = 96.dp, height = 144.dp),
+            )
+            Column(Modifier.padding(start = 14.dp)) {
+                Text(title, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 3, overflow = TextOverflow.Ellipsis)
                 Text(
-                    overview,
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier.padding(horizontal = 20.dp),
+                    buildString {
+                        append(if (mediaType == "tv") "Series" else "Movie")
+                        if (year != null) append(" · $year")
+                        details?.runtimeText?.let { append(" · $it") }
+                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(top = 4.dp),
                 )
+                details?.genres?.takeIf { it.isNotEmpty() }?.let {
+                    Text(
+                        it.take(3).joinToString(" · "),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+                }
             }
+        }
 
-            details?.cast?.takeIf { it.isNotEmpty() }?.let { cast ->
-                SectionHeader("Cast")
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 20.dp),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
-                ) {
-                    items(cast) { member ->
-                        Column(Modifier.width(76.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            val profile = Tmdb.posterUrl(member.profilePath, "w185")
-                            Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = CircleShape, modifier = Modifier.size(72.dp)) {
-                                if (profile != null) {
-                                    AsyncImage(model = profile, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-                                } else {
-                                    Box(contentAlignment = Alignment.Center) { Text("🎭", fontSize = 24.sp) }
-                                }
+        action()
+
+        details?.overview?.takeIf { it.isNotBlank() }?.let { overview ->
+            SectionHeader("Synopsis")
+            Text(
+                overview,
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.padding(horizontal = 20.dp),
+            )
+        }
+
+        details?.cast?.takeIf { it.isNotEmpty() }?.let { cast ->
+            SectionHeader("Cast")
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                items(cast) { member ->
+                    Column(Modifier.width(76.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        val profile = Tmdb.posterUrl(member.profilePath, "w185")
+                        Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = CircleShape, modifier = Modifier.size(72.dp)) {
+                            if (profile != null) {
+                                AsyncImage(model = profile, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                            } else {
+                                Box(contentAlignment = Alignment.Center) { Text("🎭", fontSize = 24.sp) }
                             }
-                            Text(member.name, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
-                            if (member.character.isNotBlank()) {
-                                Text(member.character, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
+                        }
+                        Text(member.name, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
+                        if (member.character.isNotBlank()) {
+                            Text(member.character, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
             }
-
-            if (details?.overview.isNullOrBlank() && details?.cast.isNullOrEmpty()) {
-                Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                    Text("No extra details available", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
-                }
-            }
-
-            Spacer(Modifier.height(32.dp))
         }
+
+        if (details?.overview.isNullOrBlank() && details?.cast.isNullOrEmpty()) {
+            Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                Text("No extra details available", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+            }
+        }
+
+        Spacer(Modifier.height(32.dp))
     }
 }
 
