@@ -1,8 +1,8 @@
 <h1 align="center">perCINEl</h1>
 
 <p align="center">
-  <b>Your private movie &amp; series diary.</b><br>
-  Log what you watch, rate it, and keep it yours — on your device, in your pocket, ~2&nbsp;MB.
+  <b>The movie &amp; series diary you actually own.</b><br>
+  No account. No backend. Sync to your own Google Drive, with your own credentials, in ~2&nbsp;MB.
 </p>
 
 <p align="center">
@@ -13,6 +13,17 @@
 
 ---
 
+## Why this exists
+
+Every other movie tracker asks you to make an account on *their* servers. percinel doesn't have any servers.
+
+- **No sign-up, ever.** Open the app, tell it your name, start logging.
+- **Cloud sync is opt-in, and it's yours.** When you turn it on, your diary syncs to a private folder in **your own Google Drive** — not a company's database. Nobody but you can read it.
+- **Own it end to end.** Clone the repo, drop in your own TMDB token and your own Google Cloud OAuth client, and you're running a version of percinel where *you* hold every credential. See [Build from source](#build-from-source) — it's genuinely a 15-minute setup, no code changes required.
+- **Tiny on purpose.** No ads, no social feed, no gamification, no bloated SDKs. ~1.8 MB, most of it your own watch history.
+
+It's not trying to be Letterboxd or Trakt. It's trying to be the diary app where nobody but you decides what happens to your data.
+
 ## 📲 Download
 
 Grab the latest APK from the **[Releases page](https://github.com/gopeshr/percinel/releases/latest)**.
@@ -22,6 +33,8 @@ Grab the latest APK from the **[Releases page](https://github.com/gopeshr/percin
 3. Open percinel, set up your profile, and start logging.
 
 > Not on the Play Store (yet) — percinel is distributed as a direct download, so it stays free and installs with your own signing. Tip: point [Obtainium](https://github.com/ImranR98/Obtainium) at this repo to get automatic updates.
+
+> **Want cloud sync to be entirely under your own control?** This prebuilt APK's Drive sync runs on credentials the maintainer registered — fine for casual use, but capped and not something a stranger should have to trust. [Build from source](#build-from-source) instead and it's sync to *your* Drive project, under *your* Google account, forever. No code changes needed.
 
 ## Screenshots
 
@@ -86,6 +99,29 @@ Then:
 ./gradlew :app:assembleRelease    # signed release APK
 ./gradlew :app:testDebugUnitTest  # run the sync-merge tests
 ```
+
+That's enough for a fully working app — search, ratings, watchlist, export/import, everything except cloud sync.
+
+### Cloud sync with credentials only you hold
+
+There's no client ID or secret anywhere in this codebase. percinel's Drive sync uses Android's native [`AuthorizationClient`](https://developers.google.com/identity/authorization/android), which resolves *which* Google Cloud project owns the request purely from your app's **package name** and the **SHA-1 fingerprint** of whatever key signed it. Register those two things against your own Google Cloud project, and sync just works — nothing to paste into the app, nothing to configure in code.
+
+1. **Create a Google Cloud project** at [console.cloud.google.com](https://console.cloud.google.com/) — free, no billing required for this.
+2. **Enable the Google Drive API** for that project (APIs & Services → Library → search "Google Drive API" → Enable).
+3. **Configure the OAuth consent screen** (APIs & Services → OAuth consent screen). Choose **External**, and leave the app in **Testing** — that's fine and free forever for personal use; you just add your own Google account under "Test users."
+4. **Get your signing key's SHA-1:**
+   ```bash
+   ./gradlew signingReport
+   ```
+   Look for the `SHA1` line under the variant you'll actually install (`debug` while developing, `release` for a real build).
+5. **Create an OAuth client ID** (APIs & Services → Credentials → Create Credentials → OAuth client ID → **Android**). Fill in:
+   - Package name: `gopesh.percinel` (or whatever you changed `applicationId` to in `app/build.gradle.kts`, if you forked it as your own app)
+   - SHA-1 certificate fingerprint: from step 4
+6. Build and install. Sign in, tap **Back up & sync** — that's it. Your diary now syncs to a private `appDataFolder` in *your* Drive, reachable only by an app signed with *your* key. percinel only ever requests the `drive.appdata` scope — the narrowest one Google offers, invisible in the regular Drive UI and useless for anything but this.
+
+> One gotcha: Android identifies apps by `applicationId`, not signing key. If you already have the release APK installed and build your own with the same `applicationId` (`gopesh.percinel`) but a different key, installing it will fail with a signature mismatch rather than replacing it. Uninstall the release build first, or change `applicationId` in `app/build.gradle.kts` to keep both side by side.
+
+> Forking for real? The in-app update checker points at `gopeshr/percinel`'s releases — update the URL in `UpdateChecker.kt` to your own repo, or it'll offer you the maintainer's builds.
 
 ## Attribution
 
