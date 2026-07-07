@@ -123,7 +123,7 @@ fun MatchScreen(repo: Repo, id: Long, onDone: () -> Unit) {
             if (error != null) {
                 Text(error!!, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp), fontSize = 13.sp)
             }
-            LazyColumn {
+            LazyColumn(Modifier.fillMaxSize().then(rememberBouncy())) {
                 items(results, key = { "${it.mediaType}-${it.tmdbId}" }) { r ->
                     Row(
                         Modifier.fillMaxWidth().clickable {

@@ -126,7 +126,7 @@ fun ForYouScreen(repo: Repo, onMenu: () -> Unit) {
                     )
                 }
             }
-            else -> LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(vertical = 8.dp)) {
+            else -> LazyColumn(Modifier.fillMaxSize().padding(padding).then(rememberBouncy()), contentPadding = PaddingValues(vertical = 8.dp)) {
                 items(list, key = { it.item.tmdbId }) { rec ->
                     val isAdded = rec.item.tmdbId in added
                     Row(

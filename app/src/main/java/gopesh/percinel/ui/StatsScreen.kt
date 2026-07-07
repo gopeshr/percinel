@@ -126,7 +126,7 @@ fun StatsScreen(
         val lowest = list.minByOrNull { it.rating }
 
         Column(
-            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(20.dp),
+            Modifier.fillMaxSize().padding(padding).then(rememberBouncy()).verticalScroll(rememberScrollState()).padding(20.dp),
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Metric("Total", list.size.toString(), Modifier.weight(1f)) { onOpenList(StatFilter.ALL) }
@@ -174,7 +174,7 @@ fun StatListScreen(title: String, items: List<Entry>, onBack: () -> Unit, onOpen
             }
             return@Scaffold
         }
-        LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(vertical = 8.dp)) {
+        LazyColumn(Modifier.fillMaxSize().padding(padding).then(rememberBouncy()), contentPadding = PaddingValues(vertical = 8.dp)) {
             items(items, key = { it.id }) { entry ->
                 Row(
                     Modifier

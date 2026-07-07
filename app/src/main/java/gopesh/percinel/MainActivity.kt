@@ -4,6 +4,9 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.LocalOverscrollConfiguration
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -14,13 +17,18 @@ import gopesh.percinel.ui.PercinelTheme
 class MainActivity : ComponentActivity() {
     private var sharedQuery by mutableStateOf<String?>(null)
 
+    @OptIn(ExperimentalFoundationApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         sharedQuery = extractSharedQuery(intent)
         setContent {
             PercinelTheme {
-                App(sharedQuery = sharedQuery)
+                // The platform stretch is replaced by our own rubber-band overscroll
+                // (see ui/Bouncy.kt); leaving both on doubles the effect.
+                CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
+                    App(sharedQuery = sharedQuery)
+                }
             }
         }
     }

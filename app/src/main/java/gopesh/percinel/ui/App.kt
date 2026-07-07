@@ -29,6 +29,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -222,7 +224,8 @@ fun App(sharedQuery: String? = null) {
             })
         },
     ) {
-        when (section) {
+        FadeThrough(section, label = "section") { sec ->
+            when (sec) {
             Section.FORYOU -> ForYouScreen(repo = repo, onMenu = { openDrawer() })
             Section.STATS -> StatsFlow(repo = repo, scope = scope, onMenu = { openDrawer() })
             Section.PROFILE -> ProfileScreen(repo = repo, onMenu = { openDrawer() })
@@ -242,6 +245,7 @@ fun App(sharedQuery: String? = null) {
                     update = null
                 },
             )
+            }
         }
     }
 }
@@ -320,7 +324,8 @@ private fun WatchesFlow(
     update: UpdateInfo? = null,
     onDismissUpdate: () -> Unit = {},
 ) {
-    when (val s = screen) {
+    FadeThrough(screen, label = "watches") { scr ->
+    when (val s = scr) {
         Screen.Home -> HomeScreen(
             entries = entries,
             onMenu = onMenu,
@@ -381,6 +386,7 @@ private fun WatchesFlow(
             onDone = { onScreen(Screen.Home) },
         )
     }
+    }
 }
 
 @Composable
@@ -397,7 +403,8 @@ private fun WatchlistFlow(
     }
     BackHandler(enabled = wscreen !is WlScreen.List) { wscreen = WlScreen.List }
 
-    when (val w = wscreen) {
+    FadeThrough(wscreen, label = "watchlist") { wscr ->
+    when (val w = wscr) {
         WlScreen.List -> WatchlistScreen(
             items = items,
             onMenu = onMenu,
@@ -438,6 +445,7 @@ private fun WatchlistFlow(
             onDone = { wscreen = WlScreen.List },
         )
     }
+    }
 }
 
 @Composable
@@ -468,7 +476,8 @@ private fun StatsFlow(
         }
     }
 
-    when (val s = st) {
+    FadeThrough(st, label = "stats") { stscr ->
+    when (val s = stscr) {
         StScreen.Home -> StatsScreen(
             entries = all?.let { latestPerFilm(it) },
             onMenu = onMenu,
@@ -505,6 +514,7 @@ private fun StatsFlow(
             id = s.id,
             onDone = { st = StScreen.Entry(s.id) },
         )
+    }
     }
 }
 
@@ -693,12 +703,20 @@ private fun HomeScreen(
             }
 
             if (displayed.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("Nothing here matches that", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Box(
+                    Modifier.fillMaxSize().then(rememberBouncy()).verticalScroll(rememberScrollState()),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "Nothing here matches that",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 200.dp),
+                    )
                 }
             } else {
-                LazyColumn(contentPadding = PaddingValues(vertical = 8.dp)) {
+                LazyColumn(Modifier.fillMaxSize().then(rememberBouncy()), contentPadding = PaddingValues(vertical = 8.dp)) {
                     items(displayed, key = { it.key }) { film ->
+                        Box(Modifier.animateItem()) {
                         val isSelected = film.key in selected
                         if (selectionMode) {
                             EntryRow(
@@ -747,6 +765,7 @@ private fun HomeScreen(
                                     )
                                 }
                             }
+                        }
                         }
                     }
                 }

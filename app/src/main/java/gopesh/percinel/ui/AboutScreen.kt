@@ -195,7 +195,7 @@ private fun DetailBody(
         Modifier
             .fillMaxSize()
             .padding(top = padding.calculateTopPadding())
-            .verticalScroll(rememberScrollState()),
+            .then(rememberBouncy()).verticalScroll(rememberScrollState()),
     ) {
         val backdrop = Tmdb.backdropUrl(details?.backdropPath)
         if (backdrop != null) {

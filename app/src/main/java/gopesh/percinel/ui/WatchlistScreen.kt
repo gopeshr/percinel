@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -152,7 +154,10 @@ fun WatchlistScreen(
         },
     ) { padding ->
         if (items.isEmpty()) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier.fillMaxSize().padding(padding).then(rememberBouncy()).verticalScroll(rememberScrollState()),
+                contentAlignment = Alignment.Center,
+            ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("Nothing to watch yet", fontSize = 18.sp, fontWeight = FontWeight.Medium)
                     Text(
@@ -165,8 +170,9 @@ fun WatchlistScreen(
             return@Scaffold
         }
 
-        LazyColumn(modifier = Modifier.padding(padding), contentPadding = PaddingValues(vertical = 8.dp)) {
+        LazyColumn(modifier = Modifier.fillMaxSize().padding(padding).then(rememberBouncy()), contentPadding = PaddingValues(vertical = 8.dp)) {
             items(items, key = { it.id }) { entry ->
+                Box(Modifier.animateItem()) {
                 val isSelected = entry.id in selected
                 if (selectionMode) {
                     WatchlistRow(
@@ -204,6 +210,7 @@ fun WatchlistScreen(
                             onMarkWatched = { onMarkWatched(entry.id) },
                         )
                     }
+                }
                 }
             }
         }

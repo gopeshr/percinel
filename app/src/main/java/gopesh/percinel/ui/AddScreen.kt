@@ -288,7 +288,7 @@ private fun SearchPane(
         if (error != null) {
             Text(error, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp), fontSize = 13.sp)
         }
-        LazyColumn {
+        LazyColumn(Modifier.fillMaxSize().then(rememberBouncy())) {
             items(results, key = { "${it.mediaType}-${it.tmdbId}" }) { r ->
                 Row(
                     Modifier.fillMaxWidth().clickable { onPick(r) }.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -335,7 +335,7 @@ fun EntryForm(
     onSeason: (Int?) -> Unit = {},
 ) {
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+        Modifier.fillMaxSize().then(rememberBouncy()).verticalScroll(rememberScrollState()).padding(20.dp),
     ) {
         Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(12.dp)) {
             Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -441,7 +441,7 @@ private fun ManualForm(
     onSave: () -> Unit,
 ) {
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+        Modifier.fillMaxSize().then(rememberBouncy()).verticalScroll(rememberScrollState()).padding(20.dp),
     ) {
         SectionLabel("Title")
         OutlinedTextField(

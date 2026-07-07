@@ -165,7 +165,7 @@ fun SettingsScreen(repo: Repo, onMenu: () -> Unit) {
         },
     ) { padding ->
         Column(
-            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(20.dp),
+            Modifier.fillMaxSize().padding(padding).then(rememberBouncy()).verticalScroll(rememberScrollState()).padding(20.dp),
         ) {
             ActionRow(
                 title = "Your name",

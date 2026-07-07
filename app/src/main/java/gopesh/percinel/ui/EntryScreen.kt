@@ -3,6 +3,7 @@ package gopesh.percinel.ui
 import gopesh.percinel.data.Entry
 import gopesh.percinel.data.Repo
 import gopesh.percinel.data.Tmdb
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -109,7 +110,7 @@ fun EntryScreen(
         }
 
         Column(
-            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
+            Modifier.fillMaxSize().padding(padding).then(rememberBouncy()).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
         ) {
             Row(Modifier.padding(top = 4.dp)) {
                 PosterImage(
@@ -217,6 +218,7 @@ fun EntryScreen(
                 // For series with seasons logged, group viewings by season so
                 // "watched S2 three times" is visible at a glance.
                 val useGroups = e.mediaType == "tv" && (e.season != null || others.any { it.season != null })
+                Column(Modifier.fillMaxWidth().animateContentSize()) {
                 if (!showOthers) {
                     if (useGroups) {
                         val bySeason = others.groupBy { it.season }
@@ -245,6 +247,7 @@ fun EntryScreen(
                     }
                 } else {
                     others.forEach { v -> ViewingRow(v, onOpenViewing) }
+                }
                 }
             }
 

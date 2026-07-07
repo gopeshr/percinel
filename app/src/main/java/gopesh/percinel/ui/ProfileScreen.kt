@@ -82,7 +82,7 @@ fun ProfileScreen(repo: Repo, onMenu: () -> Unit) {
     ) { padding ->
         val list = entries
         Column(
-            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(20.dp),
+            Modifier.fillMaxSize().padding(padding).then(rememberBouncy()).verticalScroll(rememberScrollState()).padding(20.dp),
         ) {
             Row(
                 Modifier.fillMaxWidth().clickable(onClickLabel = "Edit your name") { draft = name; editing = true },
