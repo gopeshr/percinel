@@ -64,4 +64,35 @@ class SyncMergeTest {
         assertEquals(7L, back["a"]!!.updatedAt)
         assertEquals("watchlist", back["b"]!!.status)
     }
+
+    @Test
+    fun deletion_propagates_and_is_not_resurrected() {
+        // The user's complaint: delete a watch on device A; the cloud still has the live copy.
+        // The delete is a tombstone with a newer updatedAt, so it must win — not come back.
+        val liveInCloud = e("x", "Unwanted", 1)
+        val tombstone = e("x", "Unwanted", 5).copy(deleted = true)
+
+        // Pull direction: local deleted it, cloud still live → stays deleted.
+        val a = Sync.merge(listOf(tombstone), listOf(liveInCloud)).single { it.uuid == "x" }
+        assertTrue("newer tombstone wins over older live copy", a.deleted)
+
+        // Other device pulls the tombstone from cloud → its live copy flips to deleted.
+        val b = Sync.merge(listOf(liveInCloud), listOf(tombstone)).single { it.uuid == "x" }
+        assertTrue("tombstone from cloud deletes the local live copy", b.deleted)
+    }
+
+    @Test
+    fun undo_after_delete_wins_over_tombstone() {
+        // Delete (tombstone @5) reached the cloud; user hits Undo → restore @9. Restore must win.
+        val tombstone = e("x", "Wanted Back", 5).copy(deleted = true)
+        val restored = e("x", "Wanted Back", 9).copy(deleted = false)
+        val merged = Sync.merge(listOf(restored), listOf(tombstone)).single { it.uuid == "x" }
+        assertTrue("newer restore beats the older tombstone", !merged.deleted)
+    }
+
+    @Test
+    fun deleted_flag_survives_roundtrip() {
+        val back = Sync.parse(Sync.serialize(listOf(e("a", "A", 7).copy(deleted = true))))
+        assertTrue(back.single().deleted)
+    }
 }

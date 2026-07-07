@@ -28,6 +28,7 @@ object Sync {
                     put("status", e.status)
                     put("updatedAt", e.updatedAt)
                     put("season", e.season ?: JSONObject.NULL)
+                    put("deleted", e.deleted)
                 },
             )
         }
@@ -59,6 +60,8 @@ object Sync {
                     status = o.optString("status", STATUS_WATCHED),
                     updatedAt = o.optLong("updatedAt", 0),
                     season = if (o.isNull("season")) null else o.optInt("season").takeIf { it > 0 },
+                    // Absent in backups written before tombstones existed → treated as live.
+                    deleted = o.optBoolean("deleted", false),
                 ),
             )
         }

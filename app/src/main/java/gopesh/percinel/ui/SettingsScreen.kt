@@ -426,13 +426,25 @@ fun SettingsScreen(repo: Repo, onMenu: () -> Unit) {
         AlertDialog(
             onDismissRequest = { confirmClear = false },
             title = { Text("Clear everything?") },
-            text = { Text("This permanently deletes all your watches. This can't be undone.") },
+            text = {
+                Text(
+                    if (syncOn) {
+                        "This permanently deletes all your watches from this device and from your " +
+                            "Google Drive backup — every device you sync will be cleared too. This can't be undone."
+                    } else {
+                        "This permanently deletes all your watches from this device. This can't be undone."
+                    },
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
                     confirmClear = false
                     scope.launch {
                         withContext(Dispatchers.IO) { repo.clearAll() }
                         Toast.makeText(context, "All watches cleared", Toast.LENGTH_SHORT).show()
+                        // Push the tombstones now so the wipe reaches the cloud (and other
+                        // devices) immediately, not just on the next background sync.
+                        if (syncOn && !syncing) cloud.connect()
                     }
                 }) { Text("Delete all", color = MaterialTheme.colorScheme.error) }
             },

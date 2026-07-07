@@ -28,9 +28,13 @@ data class Entry(
     val updatedAt: Long = 0L,
     // For series: which season this watch was of (null = whole series / unspecified).
     val season: Int? = null,
+    // Soft-delete tombstone. A deleted row stays in the DB (and in sync) so the deletion
+    // itself propagates newest-wins — otherwise a stale cloud copy would resurrect it.
+    // Hidden from every UI query; only [allForSync] and merge ever see it.
+    val deleted: Boolean = false,
 )
 
-private class DbHelper(ctx: Context) : SQLiteOpenHelper(ctx, "percinel.db", null, 4) {
+private class DbHelper(ctx: Context) : SQLiteOpenHelper(ctx, "percinel.db", null, 5) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
             """
@@ -47,7 +51,8 @@ private class DbHelper(ctx: Context) : SQLiteOpenHelper(ctx, "percinel.db", null
                 notes TEXT,
                 status TEXT NOT NULL DEFAULT '$STATUS_WATCHED',
                 updated_at INTEGER NOT NULL DEFAULT 0,
-                season INTEGER
+                season INTEGER,
+                deleted INTEGER NOT NULL DEFAULT 0
             )
             """.trimIndent()
         )
@@ -82,6 +87,9 @@ private class DbHelper(ctx: Context) : SQLiteOpenHelper(ctx, "percinel.db", null
         if (oldVersion < 4) {
             db.execSQL("ALTER TABLE entries ADD COLUMN season INTEGER")
         }
+        if (oldVersion < 5) {
+            db.execSQL("ALTER TABLE entries ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0")
+        }
     }
 }
 
@@ -91,7 +99,7 @@ class Repo(ctx: Context) {
     fun list(): List<Entry> {
         val out = ArrayList<Entry>()
         helper.readableDatabase
-            .rawQuery("SELECT * FROM entries WHERE status = ? ORDER BY watched_at DESC, id DESC", arrayOf(STATUS_WATCHED))
+            .rawQuery("SELECT * FROM entries WHERE status = ? AND deleted = 0 ORDER BY watched_at DESC, id DESC", arrayOf(STATUS_WATCHED))
             .use { c -> while (c.moveToNext()) out.add(c.toEntry()) }
         return out
     }
@@ -99,7 +107,7 @@ class Repo(ctx: Context) {
     fun watchlist(): List<Entry> {
         val out = ArrayList<Entry>()
         helper.readableDatabase
-            .rawQuery("SELECT * FROM entries WHERE status = ? ORDER BY id DESC", arrayOf(STATUS_WATCHLIST))
+            .rawQuery("SELECT * FROM entries WHERE status = ? AND deleted = 0 ORDER BY id DESC", arrayOf(STATUS_WATCHLIST))
             .use { c -> while (c.moveToNext()) out.add(c.toEntry()) }
         return out
     }
@@ -119,7 +127,7 @@ class Repo(ctx: Context) {
 
     fun get(id: Long): Entry? =
         helper.readableDatabase
-            .rawQuery("SELECT * FROM entries WHERE id = ?", arrayOf(id.toString()))
+            .rawQuery("SELECT * FROM entries WHERE id = ? AND deleted = 0", arrayOf(id.toString()))
             .use { c -> if (c.moveToNext()) c.toEntry() else null }
 
     fun insert(e: Entry): Long {
@@ -137,12 +145,44 @@ class Repo(ctx: Context) {
         helper.writableDatabase.update("entries", v, "id = ?", arrayOf(e.id.toString()))
     }
 
+    /** Soft-delete: tombstone the row so the deletion syncs (newest-wins) instead of a stale
+     *  cloud copy resurrecting it. Bumps updated_at so the delete beats the pre-delete version. */
     fun delete(id: Long) {
-        helper.writableDatabase.delete("entries", "id = ?", arrayOf(id.toString()))
+        val v = ContentValues().apply {
+            put("deleted", 1)
+            put("updated_at", System.currentTimeMillis())
+        }
+        helper.writableDatabase.update("entries", v, "id = ?", arrayOf(id.toString()))
     }
 
+    /** Undo a [delete]: clear the tombstone with a fresh updated_at so the restore wins over
+     *  the tombstone that may already have reached the cloud. */
+    fun restore(ids: List<Long>) {
+        val db = helper.writableDatabase
+        db.beginTransaction()
+        try {
+            val now = System.currentTimeMillis()
+            for (id in ids) {
+                val v = ContentValues().apply {
+                    put("deleted", 0)
+                    put("updated_at", now)
+                }
+                db.update("entries", v, "id = ?", arrayOf(id.toString()))
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    /** Tombstone every live row (rather than hard-delete) so a "clear everything" propagates
+     *  through sync and wipes the cloud backup too — not just this device. */
     fun clearAll() {
-        helper.writableDatabase.delete("entries", null, null)
+        val v = ContentValues().apply {
+            put("deleted", 1)
+            put("updated_at", System.currentTimeMillis())
+        }
+        helper.writableDatabase.update("entries", v, "deleted = 0", null)
     }
 
     /** All watched viewings of the same film (by TMDb id), newest first. Manual entries (no
@@ -151,7 +191,7 @@ class Repo(ctx: Context) {
         if (entry.tmdbId == 0L) return listOf(entry)
         val out = ArrayList<Entry>()
         helper.readableDatabase.rawQuery(
-            "SELECT * FROM entries WHERE status = ? AND tmdb_id = ? AND media_type = ? ORDER BY watched_at DESC, id DESC",
+            "SELECT * FROM entries WHERE status = ? AND tmdb_id = ? AND media_type = ? AND deleted = 0 ORDER BY watched_at DESC, id DESC",
             arrayOf(STATUS_WATCHED, entry.tmdbId.toString(), entry.mediaType),
         ).use { c -> while (c.moveToNext()) out.add(c.toEntry()) }
         return out
@@ -217,6 +257,7 @@ private fun Cursor.toEntry(): Entry {
         uuid = idx("uuid").let { if (isNull(it)) "" else getString(it) },
         updatedAt = getLong(idx("updated_at")),
         season = idx("season").let { if (isNull(it)) null else getInt(it) },
+        deleted = getInt(idx("deleted")) != 0,
     )
 }
 
@@ -233,4 +274,5 @@ private fun Entry.toValues() = ContentValues().apply {
     put("status", status)
     put("updated_at", updatedAt)
     put("season", season)
+    put("deleted", if (deleted) 1 else 0)
 }

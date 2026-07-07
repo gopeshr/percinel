@@ -340,7 +340,7 @@ private fun WatchesFlow(
             },
             onUndo = { list ->
                 scope.launch {
-                    withContext(Dispatchers.IO) { list.forEach { repo.insert(it) } }
+                    withContext(Dispatchers.IO) { repo.restore(list.map { it.id }) }
                     onEntries(withContext(Dispatchers.IO) { repo.list() })
                 }
             },
@@ -418,7 +418,7 @@ private fun WatchlistFlow(
             },
             onUndo = { list ->
                 scope.launch {
-                    withContext(Dispatchers.IO) { list.forEach { repo.insert(it) } }
+                    withContext(Dispatchers.IO) { repo.restore(list.map { it.id }) }
                     items = withContext(Dispatchers.IO) { repo.watchlist() }
                 }
             },
