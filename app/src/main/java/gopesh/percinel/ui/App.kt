@@ -89,6 +89,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -102,7 +106,7 @@ import kotlinx.coroutines.withContext
 
 private sealed interface Screen {
     data object Home : Screen
-    data object Add : Screen
+    data class Add(val query: String = "") : Screen
     data class Entry(val id: Long) : Screen
     data class About(val id: Long) : Screen
     data class Edit(val id: Long) : Screen
@@ -139,7 +143,7 @@ private sealed interface StScreen {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun App() {
+fun App(sharedQuery: String? = null) {
     val context = LocalContext.current
     val repo = remember { Repo(context) }
     val scope = rememberCoroutineScope()
@@ -164,6 +168,14 @@ fun App() {
     LaunchedEffect(screen, section) {
         if (section == Section.WATCHES && screen is Screen.Home) {
             entries = withContext(Dispatchers.IO) { repo.list() }
+        }
+    }
+
+    // Shared-in title (from another app's share sheet) → jump straight to Add, pre-searched.
+    LaunchedEffect(sharedQuery) {
+        if (!sharedQuery.isNullOrBlank()) {
+            section = Section.WATCHES
+            screen = Screen.Add(sharedQuery)
         }
     }
 
@@ -314,7 +326,7 @@ private fun WatchesFlow(
             onMenu = onMenu,
             update = update,
             onDismissUpdate = onDismissUpdate,
-            onAdd = { onScreen(Screen.Add) },
+            onAdd = { onScreen(Screen.Add()) },
             onOpen = { onScreen(Screen.Entry(it)) },
             onDelete = { list ->
                 val ids = list.map { it.id }.toSet()
@@ -328,7 +340,8 @@ private fun WatchesFlow(
                 }
             },
         )
-        Screen.Add -> AddScreen(
+        is Screen.Add -> AddScreen(
+            initialQuery = s.query,
             onCancel = { onScreen(Screen.Home) },
             onSave = { newEntry ->
                 scope.launch {
@@ -457,14 +470,14 @@ private fun StatsFlow(
 
     when (val s = st) {
         StScreen.Home -> StatsScreen(
-            entries = all,
+            entries = all?.let { latestPerFilm(it) },
             onMenu = onMenu,
             onOpenList = { st = StScreen.Listing(it) },
             onOpenEntry = { entryReturn = StScreen.Home; st = StScreen.Entry(it) },
         )
         is StScreen.Listing -> StatListScreen(
             title = statTitle(s.filter),
-            items = statEntries(s.filter, all ?: emptyList()),
+            items = statEntries(s.filter, latestPerFilm(all ?: emptyList())),
             onBack = { st = StScreen.Home },
             onOpen = { entryReturn = s; st = StScreen.Entry(it) },
         )
@@ -690,7 +703,7 @@ private fun HomeScreen(
                         if (selectionMode) {
                             EntryRow(
                                 entry = film.latest,
-                                rewatchCount = film.viewings.size,
+                                viewings = film.viewings,
                                 selected = isSelected,
                                 selectionMode = true,
                                 onClick = { toggle(film.key) },
@@ -726,7 +739,7 @@ private fun HomeScreen(
                                 Box(Modifier.background(MaterialTheme.colorScheme.background)) {
                                     EntryRow(
                                         entry = film.latest,
-                                        rewatchCount = film.viewings.size,
+                                        viewings = film.viewings,
                                         selected = false,
                                         selectionMode = false,
                                         onClick = { onOpen(film.latest.id) },
@@ -850,6 +863,8 @@ internal fun Wordmark(fontSize: androidx.compose.ui.unit.TextUnit = 22.sp) {
         },
         fontSize = fontSize,
         letterSpacing = 0.5.sp,
+        // The stylised casing would be read letter-by-letter otherwise.
+        modifier = Modifier.clearAndSetSemantics { contentDescription = "percinel" },
     )
 }
 
@@ -905,12 +920,18 @@ private fun EntryRow(
     selectionMode: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
-    rewatchCount: Int = 1,
+    viewings: List<Entry> = listOf(entry),
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .combinedClickable(
+                onClick = onClick,
+                onClickLabel = if (selectionMode) (if (selected) "Deselect" else "Select") else "Open",
+                onLongClick = onLongClick,
+                onLongClickLabel = "Select",
+            )
+            .semantics { if (selectionMode) this.selected = selected }
             .background(if (selected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -920,7 +941,7 @@ private fun EntryRow(
             Box(
                 Modifier.size(22.dp).clip(CircleShape).background(
                     if (selected) MaterialTheme.colorScheme.primary else Color.Transparent
-                ),
+                ).clearAndSetSemantics {},
                 contentAlignment = Alignment.Center,
             ) {
                 if (selected) {
@@ -946,21 +967,34 @@ private fun EntryRow(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    formatListDate(entry.watchedAt),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 13.sp,
-                )
-                if (rewatchCount > 1) {
-                    Text(
-                        "  ·  watched ${rewatchCount}×",
-                        color = MaterialTheme.colorScheme.primary,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                    )
-                }
-            }
+            val isTv = entry.mediaType == "tv"
+            val seasons = viewings.mapNotNull { it.season }.distinct()
+            val total = viewings.size
+            Text(
+                buildAnnotatedString {
+                    val muted = SpanStyle(color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    val accent = SpanStyle(color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
+                    withStyle(muted) {
+                        // Only prefix a single season; when several are logged the "N seasons" badge says it.
+                        if (isTv && seasons.size == 1) append("Season ${seasons.first()}  ·  ")
+                        append(formatListDate(entry.watchedAt))
+                    }
+                    when {
+                        isTv && seasons.size >= 2 -> {
+                            withStyle(muted) { append("  ·  ") }
+                            withStyle(accent) { append("${seasons.size} seasons") }
+                            // More viewings than seasons → at least one was watched again.
+                            if (total > seasons.size) withStyle(accent) { append(" · rewatched") }
+                        }
+                        total > 1 -> {
+                            withStyle(muted) { append("  ·  ") }
+                            withStyle(accent) { append("watched ${total}×") }
+                        }
+                    }
+                },
+                fontSize = 13.sp,
+                modifier = Modifier.padding(top = 4.dp),
+            )
         }
         RatingPill(entry.rating)
     }

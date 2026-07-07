@@ -26,9 +26,11 @@ data class Entry(
     // fills them on insert. Local autoincrement [id] is never synced.
     val uuid: String = "",
     val updatedAt: Long = 0L,
+    // For series: which season this watch was of (null = whole series / unspecified).
+    val season: Int? = null,
 )
 
-private class DbHelper(ctx: Context) : SQLiteOpenHelper(ctx, "percinel.db", null, 3) {
+private class DbHelper(ctx: Context) : SQLiteOpenHelper(ctx, "percinel.db", null, 4) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
             """
@@ -44,7 +46,8 @@ private class DbHelper(ctx: Context) : SQLiteOpenHelper(ctx, "percinel.db", null
                 watched_at INTEGER NOT NULL,
                 notes TEXT,
                 status TEXT NOT NULL DEFAULT '$STATUS_WATCHED',
-                updated_at INTEGER NOT NULL DEFAULT 0
+                updated_at INTEGER NOT NULL DEFAULT 0,
+                season INTEGER
             )
             """.trimIndent()
         )
@@ -76,6 +79,9 @@ private class DbHelper(ctx: Context) : SQLiteOpenHelper(ctx, "percinel.db", null
             }
             db.execSQL("CREATE UNIQUE INDEX idx_uuid ON entries(uuid)")
         }
+        if (oldVersion < 4) {
+            db.execSQL("ALTER TABLE entries ADD COLUMN season INTEGER")
+        }
     }
 }
 
@@ -99,12 +105,13 @@ class Repo(ctx: Context) {
     }
 
     /** Move a watchlist item into watches, capturing rating/date/notes now. */
-    fun markWatched(id: Long, rating: Double, watchedAt: Long, notes: String?) {
+    fun markWatched(id: Long, rating: Double, watchedAt: Long, notes: String?, season: Int? = null) {
         val v = ContentValues().apply {
             put("status", STATUS_WATCHED)
             put("rating", rating)
             put("watched_at", watchedAt)
             put("notes", notes)
+            put("season", season)
             put("updated_at", System.currentTimeMillis())
         }
         helper.writableDatabase.update("entries", v, "id = ?", arrayOf(id.toString()))
@@ -209,6 +216,7 @@ private fun Cursor.toEntry(): Entry {
         status = idx("status").let { if (isNull(it)) STATUS_WATCHED else getString(it) },
         uuid = idx("uuid").let { if (isNull(it)) "" else getString(it) },
         updatedAt = getLong(idx("updated_at")),
+        season = idx("season").let { if (isNull(it)) null else getInt(it) },
     )
 }
 
@@ -224,4 +232,5 @@ private fun Entry.toValues() = ContentValues().apply {
     put("notes", notes)
     put("status", status)
     put("updated_at", updatedAt)
+    put("season", season)
 }

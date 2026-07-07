@@ -41,6 +41,7 @@ fun AddViewingScreen(repo: Repo, id: Long, onDone: () -> Unit) {
     var rating by remember { mutableStateOf<Double?>(null) }
     var watchedAt by remember { mutableStateOf(System.currentTimeMillis()) }
     var notes by remember { mutableStateOf("") }
+    var season by remember { mutableStateOf<Int?>(null) }
 
     LaunchedEffect(id) {
         val e = withContext(Dispatchers.IO) { repo.get(id) }
@@ -90,6 +91,8 @@ fun AddViewingScreen(repo: Repo, id: Long, onDone: () -> Unit) {
                 onNotes = { notes = it },
                 onChange = null,
                 saveLabel = "Save this watch",
+                season = season,
+                onSeason = { season = it },
                 onSave = {
                     val r = rating ?: return@EntryForm
                     scope.launch {
@@ -106,6 +109,7 @@ fun AddViewingScreen(repo: Repo, id: Long, onDone: () -> Unit) {
                                     watchedAt = watchedAt,
                                     notes = notes.trim().ifBlank { null },
                                     status = STATUS_WATCHED,
+                                    season = if (f.mediaType == "tv") season else null,
                                 ),
                             )
                         }

@@ -39,6 +39,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -84,11 +85,15 @@ fun ProfileScreen(repo: Repo, onMenu: () -> Unit) {
             Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(20.dp),
         ) {
             Row(
-                Modifier.fillMaxWidth().clickable { draft = name; editing = true },
+                Modifier.fillMaxWidth().clickable(onClickLabel = "Edit your name") { draft = name; editing = true },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                Surface(color = MaterialTheme.colorScheme.primary, shape = CircleShape, modifier = Modifier.size(64.dp)) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primary,
+                    shape = CircleShape,
+                    modifier = Modifier.size(64.dp).clearAndSetSemantics {},
+                ) {
                     Box(contentAlignment = Alignment.Center) {
                         Text(
                             name.trim().firstOrNull()?.uppercase() ?: "🎬",

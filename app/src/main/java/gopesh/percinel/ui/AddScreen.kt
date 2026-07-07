@@ -55,8 +55,8 @@ import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AddScreen(onCancel: () -> Unit, onSave: (Entry) -> Unit, watchlist: Boolean = false) {
-    var query by remember { mutableStateOf("") }
+fun AddScreen(onCancel: () -> Unit, onSave: (Entry) -> Unit, watchlist: Boolean = false, initialQuery: String = "") {
+    var query by remember { mutableStateOf(initialQuery) }
     var results by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
     var searching by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -66,6 +66,7 @@ fun AddScreen(onCancel: () -> Unit, onSave: (Entry) -> Unit, watchlist: Boolean 
     var rating by remember { mutableStateOf<Double?>(null) }
     var watchedAt by remember { mutableStateOf(System.currentTimeMillis()) }
     var notes by remember { mutableStateOf("") }
+    var season by remember { mutableStateOf<Int?>(null) }
 
     var manual by remember { mutableStateOf(false) }
     var mTitle by remember { mutableStateOf("") }
@@ -211,6 +212,8 @@ fun AddScreen(onCancel: () -> Unit, onSave: (Entry) -> Unit, watchlist: Boolean 
                     onNotes = { notes = it },
                     onChange = { selected = null },
                     saveLabel = "Save",
+                    season = season,
+                    onSeason = { season = it },
                     onSave = {
                         val r = rating ?: return@EntryForm
                         val s = selected!!
@@ -225,6 +228,7 @@ fun AddScreen(onCancel: () -> Unit, onSave: (Entry) -> Unit, watchlist: Boolean 
                                 rating = r,
                                 watchedAt = watchedAt,
                                 notes = notes.trim().ifBlank { null },
+                                season = if (s.mediaType == "tv") season else null,
                             )
                         )
                     },
@@ -327,6 +331,8 @@ fun EntryForm(
     saveLabel: String,
     onSave: () -> Unit,
     extra: (@Composable () -> Unit)? = null,
+    season: Int? = null,
+    onSeason: (Int?) -> Unit = {},
 ) {
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
@@ -360,6 +366,23 @@ fun EntryForm(
                     }
                 }
             }
+        }
+
+        if (selected.mediaType == "tv") {
+            SectionLabel("Season (optional)", top = 24.dp)
+            var seasonText by remember { mutableStateOf(season?.toString() ?: "") }
+            OutlinedTextField(
+                value = seasonText,
+                onValueChange = { new ->
+                    val digits = new.filter { it.isDigit() }.take(3)
+                    seasonText = digits
+                    onSeason(digits.toIntOrNull()?.takeIf { it > 0 })
+                },
+                placeholder = { Text("e.g. 2") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                modifier = Modifier.width(140.dp),
+            )
         }
 
         SectionLabel("Your rating")

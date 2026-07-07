@@ -32,6 +32,8 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -53,6 +55,12 @@ fun statTitle(f: StatFilter): String = when (f) {
     StatFilter.THIS_YEAR -> "Watched in ${currentYear()}"
     StatFilter.RATED_9 -> "Rated 9 and up"
 }
+
+/** Collapse viewings to one row per film (latest watch), so rewatches don't double-count in stats. */
+fun latestPerFilm(entries: List<Entry>): List<Entry> =
+    entries
+        .groupBy { e -> if (e.tmdbId != 0L) "t:${e.mediaType}:${e.tmdbId}" else "m:${e.id}" }
+        .mapNotNull { (_, viewings) -> viewings.maxByOrNull { it.watchedAt } }
 
 fun statEntries(f: StatFilter, all: List<Entry>): List<Entry> {
     val zone = ZoneId.systemDefault()
@@ -210,7 +218,7 @@ fun StatListScreen(title: String, items: List<Entry>, onBack: () -> Unit, onOpen
 private fun Metric(label: String, value: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
-        modifier = modifier,
+        modifier = modifier.semantics { onClick(label = "See the list", action = null) },
         color = MaterialTheme.colorScheme.surfaceVariant,
         shape = RoundedCornerShape(12.dp),
     ) {
@@ -232,7 +240,7 @@ private fun Highlight(label: String, entry: Entry, onClick: () -> Unit) {
         modifier = Modifier.padding(top = 28.dp, bottom = 10.dp),
     )
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick),
+        Modifier.fillMaxWidth().clickable(onClickLabel = "Open", onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {

@@ -24,6 +24,7 @@ object Export {
         Col("Title") { it.title },
         Col("Year") { it.year },
         Col("Type") { if (it.mediaType == "tv") "Series" else "Movie" },
+        Col("Season") { it.season },
         Col("Rating") { it.rating },
         Col("Watched on") { dateFmt.format(Date(it.watchedAt)) },
         Col("Notes") { it.notes ?: "" },

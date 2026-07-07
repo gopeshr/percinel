@@ -26,6 +26,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
@@ -74,13 +76,17 @@ fun PosterImage(posterUrl: String?, mediaType: String, modifier: Modifier = Modi
         if (posterUrl != null) {
             AsyncImage(
                 model = posterUrl,
-                contentDescription = null,
+                contentDescription = null, // decorative — the title text always sits beside it
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
             Box(contentAlignment = Alignment.Center) {
-                Text(if (mediaType == "tv") "📺" else "🎬", fontSize = 26.sp)
+                Text(
+                    if (mediaType == "tv") "📺" else "🎬",
+                    fontSize = 26.sp,
+                    modifier = Modifier.clearAndSetSemantics {},
+                )
             }
         }
     }
@@ -88,7 +94,13 @@ fun PosterImage(posterUrl: String?, mediaType: String, modifier: Modifier = Modi
 
 @Composable
 fun RatingPill(rating: Double) {
-    Surface(color = Silver, shape = RoundedCornerShape(999.dp)) {
+    Surface(
+        color = Silver,
+        shape = RoundedCornerShape(999.dp),
+        modifier = Modifier.clearAndSetSemantics {
+            contentDescription = "Rated ${formatRating(rating)} out of 10"
+        },
+    ) {
         Text(
             formatRating(rating),
             color = Color(0xFF1B1A16),

@@ -27,6 +27,7 @@ object Sync {
                     put("notes", e.notes ?: JSONObject.NULL)
                     put("status", e.status)
                     put("updatedAt", e.updatedAt)
+                    put("season", e.season ?: JSONObject.NULL)
                 },
             )
         }
@@ -57,6 +58,7 @@ object Sync {
                     notes = if (o.isNull("notes")) null else o.optString("notes").ifBlank { null },
                     status = o.optString("status", STATUS_WATCHED),
                     updatedAt = o.optLong("updatedAt", 0),
+                    season = if (o.isNull("season")) null else o.optInt("season").takeIf { it > 0 },
                 ),
             )
         }

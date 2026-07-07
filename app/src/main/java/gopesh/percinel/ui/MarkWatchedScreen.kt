@@ -38,6 +38,7 @@ fun MarkWatchedScreen(repo: Repo, id: Long, onDone: () -> Unit) {
     var rating by remember { mutableStateOf<Double?>(null) }
     var watchedAt by remember { mutableStateOf(System.currentTimeMillis()) }
     var notes by remember { mutableStateOf("") }
+    var season by remember { mutableStateOf<Int?>(null) }
 
     LaunchedEffect(id) {
         val e = withContext(Dispatchers.IO) { repo.get(id) }
@@ -87,11 +88,16 @@ fun MarkWatchedScreen(repo: Repo, id: Long, onDone: () -> Unit) {
                 onNotes = { notes = it },
                 onChange = null,
                 saveLabel = "Mark as watched",
+                season = season,
+                onSeason = { season = it },
                 onSave = {
                     val r = rating ?: return@EntryForm
                     scope.launch {
                         withContext(Dispatchers.IO) {
-                            repo.markWatched(e.id, r, watchedAt, notes.trim().ifBlank { null })
+                            repo.markWatched(
+                                e.id, r, watchedAt, notes.trim().ifBlank { null },
+                                season = if (e.mediaType == "tv") season else null,
+                            )
                         }
                         onDone()
                     }

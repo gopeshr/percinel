@@ -47,6 +47,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -220,7 +223,13 @@ private fun WatchlistRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .combinedClickable(
+                onClick = onClick,
+                onClickLabel = if (selectionMode) (if (selected) "Deselect" else "Select") else "Open",
+                onLongClick = onLongClick,
+                onLongClickLabel = "Select",
+            )
+            .semantics { if (selectionMode) this.selected = selected }
             .background(if (selected) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.background)
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -230,7 +239,7 @@ private fun WatchlistRow(
             Box(
                 Modifier.size(22.dp).clip(CircleShape).background(
                     if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
-                ),
+                ).clearAndSetSemantics {},
                 contentAlignment = Alignment.Center,
             ) {
                 if (selected) {

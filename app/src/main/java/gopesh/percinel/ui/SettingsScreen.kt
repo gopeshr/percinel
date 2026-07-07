@@ -62,7 +62,13 @@ fun SettingsScreen(repo: Repo, onMenu: () -> Unit) {
     var draft by remember { mutableStateOf("") }
     var confirmClear by remember { mutableStateOf(false) }
     var chooseExport by remember { mutableStateOf(false) }
+    var importing by remember { mutableStateOf(false) }
     var pendingSave by remember { mutableStateOf<List<Entry>?>(null) }
+
+    if (importing) {
+        ImportScreen(repo = repo, onClose = { importing = false })
+        return
+    }
 
     val saveLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument(Export.MIME),
@@ -175,6 +181,13 @@ fun SettingsScreen(repo: Repo, onMenu: () -> Unit) {
                 title = "Export your watches",
                 subtitle = "Save or share as a spreadsheet or text",
                 onClick = { chooseExport = true },
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+
+            ActionRow(
+                title = "Import watches",
+                subtitle = "Bring your history from Letterboxd, IMDb, or an export",
+                onClick = { importing = true },
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outline)
 
