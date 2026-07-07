@@ -4,6 +4,9 @@ import gopesh.percinel.BuildConfig
 import gopesh.percinel.data.Entry
 import gopesh.percinel.data.Export
 import gopesh.percinel.data.Repo
+import gopesh.percinel.data.UpdateChecker
+import gopesh.percinel.data.UpdateInfo
+import gopesh.percinel.data.Updater
 import android.content.Context
 import android.content.Intent
 import android.widget.Toast
@@ -51,6 +54,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** State for the manual "Check for updates" row. */
+private sealed interface UpdState {
+    data object Idle : UpdState
+    data object Checking : UpdState
+    data object UpToDate : UpdState
+    data object CheckFailed : UpdState
+    data class Found(val update: UpdateInfo) : UpdState
+    data class Downloading(val pct: Int) : UpdState
+    data class DownloadFailed(val update: UpdateInfo) : UpdState
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun SettingsScreen(repo: Repo, onMenu: () -> Unit) {
@@ -63,6 +77,7 @@ fun SettingsScreen(repo: Repo, onMenu: () -> Unit) {
     var confirmClear by remember { mutableStateOf(false) }
     var chooseExport by remember { mutableStateOf(false) }
     var importing by remember { mutableStateOf(false) }
+    var updState by remember { mutableStateOf<UpdState>(UpdState.Idle) }
     var pendingSave by remember { mutableStateOf<List<Entry>?>(null) }
 
     if (importing) {
@@ -191,6 +206,7 @@ fun SettingsScreen(repo: Repo, onMenu: () -> Unit) {
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outline)
 
+
             ActionRow(
                 title = "Clear everything",
                 subtitle = "Delete all your watches from this device",
@@ -204,13 +220,57 @@ fun SettingsScreen(repo: Repo, onMenu: () -> Unit) {
                 if (syncOn) "On this device + your private Google Drive" else "Everything stays on this device",
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outline)
-            // Long-press the version to toggle a hidden "test update" mode (forces the update
-            // banner on next launch, so the download/install flow can be tested without releasing).
+            // Tap the version to check for updates (and download/install right here).
+            // Long-press toggles a hidden "test update" mode (forces the update banner on
+            // next launch, so the download/install flow can be tested without releasing).
+            fun onVersionTap() {
+                when (val s = updState) {
+                    UpdState.Checking, is UpdState.Downloading -> {} // already busy
+                    UpdState.Idle, UpdState.UpToDate, UpdState.CheckFailed -> {
+                        updState = UpdState.Checking
+                        scope.launch {
+                            updState = when (val r = UpdateChecker.checkNow()) {
+                                is UpdateChecker.CheckResult.UpdateAvailable -> {
+                                    // Re-show the home banner too, even if it was dismissed.
+                                    prefs.edit().remove("update_dismissed").apply()
+                                    UpdState.Found(r.update)
+                                }
+                                UpdateChecker.CheckResult.UpToDate -> UpdState.UpToDate
+                                UpdateChecker.CheckResult.Failed -> UpdState.CheckFailed
+                            }
+                        }
+                    }
+                    is UpdState.Found -> {
+                        if (!Updater.canInstall(context)) {
+                            Toast.makeText(context, "Allow percinel to install updates, then tap again", Toast.LENGTH_LONG).show()
+                            Updater.openInstallPermissionSettings(context)
+                        } else {
+                            scope.launch {
+                                updState = UpdState.Downloading(-1)
+                                try {
+                                    val apk = Updater.download(context, s.update.downloadUrl) {
+                                        updState = UpdState.Downloading(it)
+                                    }
+                                    updState = UpdState.Found(s.update)
+                                    Updater.install(context, apk)
+                                } catch (_: Exception) {
+                                    updState = UpdState.DownloadFailed(s.update)
+                                }
+                            }
+                        }
+                    }
+                    is UpdState.DownloadFailed -> {
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW, android.net.Uri.parse(s.update.downloadUrl)),
+                        )
+                    }
+                }
+            }
             Column(
                 Modifier
                     .fillMaxWidth()
                     .combinedClickable(
-                        onClick = {},
+                        onClick = { onVersionTap() },
                         onLongClick = {
                             val on = !prefs.getBoolean("dev_force_update", false)
                             prefs.edit().putBoolean("dev_force_update", on).apply()
@@ -225,7 +285,16 @@ fun SettingsScreen(repo: Repo, onMenu: () -> Unit) {
             ) {
                 Text("Version", fontSize = 16.sp, fontWeight = FontWeight.Medium)
                 Text(
-                    BuildConfig.VERSION_NAME,
+                    when (val s = updState) {
+                        UpdState.Idle -> "${BuildConfig.VERSION_NAME} — tap to check for updates"
+                        UpdState.Checking -> "Checking…"
+                        UpdState.UpToDate -> "${BuildConfig.VERSION_NAME} — you're on the latest version"
+                        UpdState.CheckFailed -> "Couldn't check. Are you online? Tap to retry"
+                        is UpdState.Found -> "${s.update.version} is ready — tap to install"
+                        is UpdState.Downloading ->
+                            if (s.pct in 0..100) "Downloading… ${s.pct}%" else "Downloading…"
+                        is UpdState.DownloadFailed -> "Download didn't work — tap to get it in your browser"
+                    },
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp),

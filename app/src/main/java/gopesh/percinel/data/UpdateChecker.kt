@@ -17,9 +17,20 @@ data class UpdateInfo(val version: String, val downloadUrl: String, val notes: S
 object UpdateChecker {
     private const val LATEST = "https://api.github.com/repos/gopeshr/percinel/releases/latest"
 
+    /** Outcome of a deliberate, user-initiated check — unlike the silent launch check,
+     *  "already current" and "couldn't reach GitHub" need different answers. */
+    sealed interface CheckResult {
+        data class UpdateAvailable(val update: UpdateInfo) : CheckResult
+        data object UpToDate : CheckResult
+        data object Failed : CheckResult
+    }
+
     /** @param force when true, treat the latest release as an update even if it isn't newer
      *  (used by the hidden "test update" dev toggle). */
-    suspend fun check(force: Boolean = false): UpdateInfo? = withContext(Dispatchers.IO) {
+    suspend fun check(force: Boolean = false): UpdateInfo? =
+        (checkNow(force) as? CheckResult.UpdateAvailable)?.update
+
+    suspend fun checkNow(force: Boolean = false): CheckResult = withContext(Dispatchers.IO) {
         try {
             val conn = (URL(LATEST).openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
@@ -29,10 +40,11 @@ object UpdateChecker {
                 connectTimeout = 8000
                 readTimeout = 8000
             }
-            if (conn.responseCode != 200) return@withContext null
+            if (conn.responseCode != 200) return@withContext CheckResult.Failed
             val o = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
             val tag = o.optString("tag_name").removePrefix("v").trim()
-            if (tag.isEmpty() || (!force && !isNewer(tag, BuildConfig.VERSION_NAME))) return@withContext null
+            if (tag.isEmpty()) return@withContext CheckResult.Failed
+            if (!force && !isNewer(tag, BuildConfig.VERSION_NAME)) return@withContext CheckResult.UpToDate
 
             // Prefer the direct .apk asset; fall back to the release page.
             var url = o.optString("html_url")
@@ -45,9 +57,11 @@ object UpdateChecker {
                     }
                 }
             }
-            UpdateInfo(version = tag, downloadUrl = url, notes = cleanNotes(o.optString("body")))
+            CheckResult.UpdateAvailable(
+                UpdateInfo(version = tag, downloadUrl = url, notes = cleanNotes(o.optString("body"))),
+            )
         } catch (_: Exception) {
-            null
+            CheckResult.Failed
         }
     }
 

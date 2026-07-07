@@ -760,6 +760,8 @@ private fun UpdateBanner(update: UpdateInfo, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var downloading by remember { mutableStateOf(false) }
+    var progress by remember { mutableStateOf(-1) } // -1 = size unknown
+    var failed by remember { mutableStateOf(false) }
 
     fun getUpdate() {
         if (!Updater.canInstall(context)) {
@@ -768,11 +770,14 @@ private fun UpdateBanner(update: UpdateInfo, onDismiss: () -> Unit) {
             return
         }
         downloading = true
+        progress = -1
         scope.launch {
             try {
-                val apk = Updater.download(context, update.downloadUrl)
+                val apk = Updater.download(context, update.downloadUrl) { progress = it }
+                failed = false
                 Updater.install(context, apk)
             } catch (e: Exception) {
+                failed = true
                 Toast.makeText(context, "Couldn't download the update. Try again.", Toast.LENGTH_SHORT).show()
             } finally {
                 downloading = false
@@ -827,7 +832,29 @@ private fun UpdateBanner(update: UpdateInfo, onDismiss: () -> Unit) {
                 modifier = Modifier.padding(top = 9.dp, bottom = 12.dp, start = 2.dp, end = 2.dp),
             )
 
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.End,
+            ) {
+                if (failed && !downloading) {
+                    // In-app download couldn't get through (some phones block or stall it) —
+                    // the browser takes a different network path and always works.
+                    Text(
+                        "Get it in your browser",
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable {
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, android.net.Uri.parse(update.downloadUrl)),
+                                )
+                            }
+                            .padding(vertical = 8.dp, horizontal = 2.dp),
+                    )
+                }
                 Button(
                     onClick = { if (!downloading) getUpdate() },
                     shape = RoundedCornerShape(50),
@@ -842,9 +869,12 @@ private fun UpdateBanner(update: UpdateInfo, onDismiss: () -> Unit) {
                             strokeWidth = 2.dp,
                             color = MaterialTheme.colorScheme.onPrimary,
                         )
-                        Text("  Downloading…", fontWeight = FontWeight.Medium)
+                        Text(
+                            if (progress in 0..100) "  $progress%" else "  Downloading…",
+                            fontWeight = FontWeight.Medium,
+                        )
                     } else {
-                        Text("Update now", fontWeight = FontWeight.Medium)
+                        Text(if (failed) "Try again" else "Update now", fontWeight = FontWeight.Medium)
                     }
                 }
             }
