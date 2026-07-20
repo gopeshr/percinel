@@ -25,8 +25,8 @@ android {
         applicationId = "gopesh.percinel"
         minSdk = 26
         targetSdk = 34
-        versionCode = 55
-        versionName = "1.39"
+        versionCode = 56
+        versionName = "1.40"
         buildConfigField("String", "TMDB_TOKEN", "\"$tmdbToken\"")
     }
 
