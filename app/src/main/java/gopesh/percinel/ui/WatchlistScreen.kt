@@ -34,13 +34,10 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -174,43 +171,15 @@ fun WatchlistScreen(
             items(items, key = { it.id }) { entry ->
                 Box(Modifier.animateItem()) {
                 val isSelected = entry.id in selected
-                if (selectionMode) {
-                    WatchlistRow(
-                        entry = entry,
-                        selected = isSelected,
-                        selectionMode = true,
-                        onClick = { toggle(entry.id) },
-                        onLongClick = {},
-                        onMarkWatched = null,
-                    )
-                } else {
-                    val dismissState = rememberSwipeToDismissBoxState(
-                        confirmValueChange = { value ->
-                            if (value == SwipeToDismissBoxValue.EndToStart) { removeWithUndo(listOf(entry)); true } else false
-                        },
-                    )
-                    SwipeToDismissBox(
-                        state = dismissState,
-                        enableDismissFromStartToEnd = false,
-                        backgroundContent = {
-                            Box(
-                                Modifier.fillMaxSize().background(MaterialTheme.colorScheme.errorContainer).padding(horizontal = 24.dp),
-                                contentAlignment = Alignment.CenterEnd,
-                            ) {
-                                Text("Remove", color = MaterialTheme.colorScheme.onErrorContainer, fontWeight = FontWeight.Medium)
-                            }
-                        },
-                    ) {
-                        WatchlistRow(
-                            entry = entry,
-                            selected = false,
-                            selectionMode = false,
-                            onClick = { onOpen(entry.id) },
-                            onLongClick = { selectionMode = true; selected = setOf(entry.id) },
-                            onMarkWatched = { onMarkWatched(entry.id) },
-                        )
-                    }
-                }
+                // Remove is intentionally only via long-press → select → Delete, never swipe.
+                WatchlistRow(
+                    entry = entry,
+                    selected = isSelected,
+                    selectionMode = selectionMode,
+                    onClick = { if (selectionMode) toggle(entry.id) else onOpen(entry.id) },
+                    onLongClick = { if (!selectionMode) { selectionMode = true; selected = setOf(entry.id) } },
+                    onMarkWatched = if (selectionMode) null else ({ onMarkWatched(entry.id) }),
+                )
                 }
             }
         }

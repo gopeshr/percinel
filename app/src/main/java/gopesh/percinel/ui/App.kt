@@ -70,11 +70,8 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -718,54 +715,20 @@ private fun HomeScreen(
                     items(displayed, key = { it.key }) { film ->
                         Box(Modifier.animateItem()) {
                         val isSelected = film.key in selected
-                        if (selectionMode) {
-                            EntryRow(
-                                entry = film.latest,
-                                viewings = film.viewings,
-                                selected = isSelected,
-                                selectionMode = true,
-                                onClick = { toggle(film.key) },
-                                onLongClick = {},
-                            )
-                        } else {
-                            val dismissState = rememberSwipeToDismissBoxState(
-                                confirmValueChange = { value ->
-                                    if (value == SwipeToDismissBoxValue.EndToStart) {
-                                        removeWithUndo(film.viewings); true
-                                    } else false
-                                },
-                            )
-                            SwipeToDismissBox(
-                                state = dismissState,
-                                enableDismissFromStartToEnd = false,
-                                backgroundContent = {
-                                    Box(
-                                        Modifier
-                                            .fillMaxSize()
-                                            .background(MaterialTheme.colorScheme.errorContainer)
-                                            .padding(horizontal = 24.dp),
-                                        contentAlignment = Alignment.CenterEnd,
-                                    ) {
-                                        Text(
-                                            "Delete",
-                                            color = MaterialTheme.colorScheme.onErrorContainer,
-                                            fontWeight = FontWeight.Medium,
-                                        )
-                                    }
-                                },
-                            ) {
-                                Box(Modifier.background(MaterialTheme.colorScheme.background)) {
-                                    EntryRow(
-                                        entry = film.latest,
-                                        viewings = film.viewings,
-                                        selected = false,
-                                        selectionMode = false,
-                                        onClick = { onOpen(film.latest.id) },
-                                        onLongClick = { selectionMode = true; selected = setOf(film.key) },
-                                    )
-                                }
-                            }
-                        }
+                        // Delete is intentionally only via long-press → select → Delete,
+                        // never swipe — swipe caused accidental deletions.
+                        EntryRow(
+                            entry = film.latest,
+                            viewings = film.viewings,
+                            selected = isSelected,
+                            selectionMode = selectionMode,
+                            onClick = {
+                                if (selectionMode) toggle(film.key) else onOpen(film.latest.id)
+                            },
+                            onLongClick = {
+                                if (!selectionMode) { selectionMode = true; selected = setOf(film.key) }
+                            },
+                        )
                         }
                     }
                 }

@@ -1,6 +1,7 @@
 package gopesh.percinel.ui
 
 import gopesh.percinel.data.Entry
+import gopesh.percinel.data.STATUS_WATCHED
 import gopesh.percinel.data.STATUS_WATCHLIST
 import gopesh.percinel.data.SearchResult
 import gopesh.percinel.data.Tmdb
@@ -137,6 +138,7 @@ fun AddScreen(onCancel: () -> Unit, onSave: (Entry) -> Unit, watchlist: Boolean 
         Box(Modifier.padding(padding).fillMaxSize()) {
             if (manual) {
                 ManualForm(
+                    watchlist = watchlist,
                     title = mTitle,
                     onTitle = { mTitle = it },
                     type = mType,
@@ -150,8 +152,9 @@ fun AddScreen(onCancel: () -> Unit, onSave: (Entry) -> Unit, watchlist: Boolean 
                     notes = notes,
                     onNotes = { notes = it },
                     onSave = {
-                        val r = rating ?: return@ManualForm
                         if (mTitle.isBlank()) return@ManualForm
+                        val r = rating
+                        if (!watchlist && r == null) return@ManualForm
                         onSave(
                             Entry(
                                 id = 0,
@@ -160,9 +163,13 @@ fun AddScreen(onCancel: () -> Unit, onSave: (Entry) -> Unit, watchlist: Boolean 
                                 title = mTitle.trim(),
                                 posterPath = null,
                                 year = mYear.toIntOrNull(),
-                                rating = r,
+                                // Watchlist items aren't watched yet — no rating/notes; a
+                                // sentinel 0.0 rating keeps the non-null column happy until
+                                // "Mark watched" captures the real one.
+                                rating = if (watchlist) 0.0 else r!!,
                                 watchedAt = watchedAt,
-                                notes = notes.trim().ifBlank { null },
+                                notes = if (watchlist) null else notes.trim().ifBlank { null },
+                                status = if (watchlist) STATUS_WATCHLIST else STATUS_WATCHED,
                             )
                         )
                     },
@@ -175,7 +182,7 @@ fun AddScreen(onCancel: () -> Unit, onSave: (Entry) -> Unit, watchlist: Boolean 
                     searching = searching,
                     error = error,
                     offline = offline,
-                    allowManual = !watchlist,
+                    allowManual = true,
                     onPick = { r ->
                         if (watchlist) {
                             onSave(
@@ -439,6 +446,7 @@ private fun ManualForm(
     notes: String,
     onNotes: (String) -> Unit,
     onSave: () -> Unit,
+    watchlist: Boolean = false,
 ) {
     Column(
         Modifier.fillMaxSize().then(rememberBouncy()).verticalScroll(rememberScrollState()).padding(20.dp),
@@ -484,29 +492,32 @@ private fun ManualForm(
             modifier = Modifier.width(140.dp),
         )
 
-        SectionLabel("Your rating", top = 24.dp)
-        RatingField(initial = rating, onChange = onRating)
+        // Rating / watched-on / notes only apply once it's actually watched.
+        if (!watchlist) {
+            SectionLabel("Your rating", top = 24.dp)
+            RatingField(initial = rating, onChange = onRating)
 
-        SectionLabel("Watched on", top = 24.dp)
-        DateTimeRow(millis = watchedAt, onChange = onWatchedAt)
+            SectionLabel("Watched on", top = 24.dp)
+            DateTimeRow(millis = watchedAt, onChange = onWatchedAt)
 
-        SectionLabel("Notes", top = 24.dp)
-        OutlinedTextField(
-            value = notes,
-            onValueChange = onNotes,
-            placeholder = { Text("Any thoughts? Tap the mic to dictate.") },
-            trailingIcon = {
-                DictationButton(onText = { spoken ->
-                    onNotes(listOf(notes.trim(), spoken).filter { it.isNotEmpty() }.joinToString(" "))
-                })
-            },
-            modifier = Modifier.fillMaxWidth(),
-            minLines = 3,
-        )
+            SectionLabel("Notes", top = 24.dp)
+            OutlinedTextField(
+                value = notes,
+                onValueChange = onNotes,
+                placeholder = { Text("Any thoughts? Tap the mic to dictate.") },
+                trailingIcon = {
+                    DictationButton(onText = { spoken ->
+                        onNotes(listOf(notes.trim(), spoken).filter { it.isNotEmpty() }.joinToString(" "))
+                    })
+                },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 3,
+            )
+        }
 
         Button(
             onClick = onSave,
-            enabled = title.isNotBlank() && rating != null,
+            enabled = title.isNotBlank() && (watchlist || rating != null),
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
