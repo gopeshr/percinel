@@ -1,10 +1,12 @@
 package gopesh.percinel.ui
 
 import gopesh.percinel.data.Entry
+import gopesh.percinel.data.Insights
 import gopesh.percinel.data.Tmdb
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,6 +22,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
@@ -34,6 +37,7 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -67,6 +71,9 @@ fun WatchlistScreen(
     onMarkWatched: (Long) -> Unit,
     onRemove: (List<Entry>) -> Unit,
     onUndo: (List<Entry>) -> Unit,
+    /** Taste-matched suggestion from this list, shown above it. Null hides the card. */
+    pick: Insights.Pick? = null,
+    onAnotherPick: () -> Unit = {},
 ) {
     val snackbarState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -168,6 +175,11 @@ fun WatchlistScreen(
         }
 
         LazyColumn(modifier = Modifier.fillMaxSize().padding(padding).then(rememberBouncy()), contentPadding = PaddingValues(vertical = 8.dp)) {
+            if (pick != null && !selectionMode) {
+                item(key = "pick") {
+                    PickCard(pick, onOpen = { onOpen(pick.entry.id) }, onAnother = onAnotherPick)
+                }
+            }
             items(items, key = { it.id }) { entry ->
                 Box(Modifier.animateItem()) {
                 val isSelected = entry.id in selected
@@ -181,6 +193,64 @@ fun WatchlistScreen(
                     onMarkWatched = if (selectionMode) null else ({ onMarkWatched(entry.id) }),
                 )
                 }
+            }
+        }
+    }
+}
+
+/**
+ * "Pick one for me" — the strongest match from this watchlist against how you've rated things,
+ * with the reason spelled out so it never feels like a black box.
+ */
+@Composable
+private fun PickCard(pick: Insights.Pick, onOpen: () -> Unit, onAnother: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Text(
+                "TONIGHT'S PICK",
+                fontSize = 11.sp,
+                letterSpacing = 0.9.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Row(
+                Modifier.fillMaxWidth().padding(top = 12.dp)
+                    .clickable(onClickLabel = "Open", onClick = onOpen),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                PosterImage(
+                    posterUrl = Tmdb.posterUrl(pick.entry.posterPath, "w185"),
+                    mediaType = pick.entry.mediaType,
+                    modifier = Modifier.size(width = 56.dp, height = 84.dp),
+                )
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        buildString {
+                            append(pick.entry.title)
+                            if (pick.entry.year != null) append("  ·  ${pick.entry.year}")
+                        },
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        pick.reason,
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+            }
+            TextButton(
+                onClick = onAnother,
+                modifier = Modifier.padding(top = 4.dp),
+            ) {
+                Text("Show me another", color = MaterialTheme.colorScheme.primary, fontSize = 13.sp)
             }
         }
     }

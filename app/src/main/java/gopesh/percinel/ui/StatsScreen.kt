@@ -1,6 +1,8 @@
 package gopesh.percinel.ui
 
 import gopesh.percinel.data.Entry
+import gopesh.percinel.data.Insights
+import gopesh.percinel.data.Meta
 import gopesh.percinel.data.Tmdb
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -8,8 +10,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -30,6 +34,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.onClick
@@ -83,6 +88,14 @@ fun StatsScreen(
     onMenu: () -> Unit,
     onOpenList: (StatFilter) -> Unit,
     onOpenEntry: (Long) -> Unit,
+    /** Every viewing (not collapsed per film) — the heatmap counts sittings, not titles. */
+    viewings: List<Entry> = emptyList(),
+    meta: Map<String, Meta> = emptyMap(),
+    pendingEnrich: Int = 0,
+    enrichProgress: Pair<Int, Int>? = null,
+    onEnrich: () -> Unit = {},
+    onFilmYear: () -> Unit = {},
+    onPosterWall: () -> Unit = {},
 ) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -143,6 +156,109 @@ fun StatsScreen(
 
             highest?.let { Highlight("Highest rated", it) { onOpenEntry(it.id) } }
             lowest?.takeIf { it.id != highest?.id }?.let { Highlight("Lowest rated", it) { onOpenEntry(it.id) } }
+
+            // ---- Deeper insights -------------------------------------------------
+            Row(Modifier.padding(top = 28.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                NavCard("Your film year", "A shareable recap", Modifier.weight(1f), onFilmYear)
+                NavCard("Poster wall", "Everything at once", Modifier.weight(1f), onPosterWall)
+            }
+
+            if (enrichProgress != null) {
+                val (done, total) = enrichProgress
+                InsightLabel("Analysing your library")
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        "Looking up runtimes, genres and people… $done of $total",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(14.dp),
+                    )
+                }
+            } else if (pendingEnrich > 0) {
+                InsightLabel("Unlock deeper stats")
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().semantics { onClick(label = "Analyse", action = null) }
+                        .clickable(onClickLabel = "Analyse my library", onClick = onEnrich),
+                ) {
+                    Column(Modifier.padding(14.dp)) {
+                        Text("Analyse my library", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                        Text(
+                            "Look up runtimes, genres, directors and cast for $pendingEnrich " +
+                                (if (pendingEnrich == 1) "title" else "titles") +
+                                " — then hours watched, top genres and taste-based picks all light up.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
+                }
+            }
+
+            // These walk the whole library, so compute once per data change — never per frame.
+            val heat = remember(viewings, thisYear) { Insights.heatmap(thisYear, viewings) }
+            val histogram = remember(list) { Insights.ratingHistogram(list) }
+            val genres = remember(list, meta) { Insights.topGenres(list, meta) }
+            val directors = remember(list, meta) { Insights.topDirectors(list, meta) }
+            val actors = remember(list, meta) { Insights.topActors(list, meta) }
+            val decades = remember(list) { Insights.byDecade(list) }
+
+            if (heat.isNotEmpty()) {
+                InsightLabel("When you watch")
+                HeatmapCard(thisYear, heat)
+            }
+
+            InsightLabel("How you rate")
+            HistogramCard(histogram)
+
+            if (genres.isNotEmpty()) {
+                InsightLabel("Your genres")
+                TopListCard(genres)
+            }
+            if (directors.isNotEmpty()) {
+                InsightLabel("Directors you return to")
+                TopListCard(directors)
+            }
+            if (actors.isNotEmpty()) {
+                InsightLabel("On screen most")
+                TopListCard(actors)
+            }
+            if (decades.size > 1) {
+                InsightLabel("Decades you live in")
+                DecadesCard(decades)
+            }
+            Spacer(Modifier.height(32.dp))
+        }
+    }
+}
+
+/** A tappable tile that leads to one of the richer insight screens. */
+@Composable
+private fun NavCard(title: String, subtitle: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(12.dp),
+        modifier = modifier.clickable(onClickLabel = "Open", onClick = onClick),
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Text(title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                subtitle,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 3.dp),
+            )
+            Text(
+                "›",
+                fontSize = 18.sp,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 6.dp),
+            )
         }
     }
 }

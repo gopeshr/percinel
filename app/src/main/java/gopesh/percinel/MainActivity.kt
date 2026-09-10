@@ -11,6 +11,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import coil.Coil
+import coil.ImageLoader
+import gopesh.percinel.data.Net
 import gopesh.percinel.ui.App
 import gopesh.percinel.ui.PercinelTheme
 
@@ -21,6 +24,13 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
+        // Posters go through the same DoH-aware client as the API, so artwork keeps
+        // loading on networks that DNS-block TMDB.
+        Coil.setImageLoader {
+            ImageLoader.Builder(this)
+                .okHttpClient { Net.client }
+                .build()
+        }
         sharedQuery = extractSharedQuery(intent)
         setContent {
             PercinelTheme {

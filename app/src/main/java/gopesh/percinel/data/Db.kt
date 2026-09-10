@@ -34,7 +34,30 @@ data class Entry(
     val deleted: Boolean = false,
 )
 
-private class DbHelper(ctx: Context) : SQLiteOpenHelper(ctx, "percinel.db", null, 5) {
+/**
+ * Cached TMDB facts for one title, so stats and the year recap can do maths over a whole library
+ * without re-fetching hundreds of films. Purely derived data — never synced, always re-fetchable.
+ */
+data class Meta(
+    val tmdbId: Long,
+    val mediaType: String,
+    val runtimeMin: Int?,
+    val episodes: Int?,
+    val seasons: Int?,
+    val genres: List<String>,
+    val director: String?,
+    val cast: List<String>,
+    val fetchedAt: Long = 0L,
+) {
+    val key: String get() = metaKey(mediaType, tmdbId)
+}
+
+fun metaKey(mediaType: String, tmdbId: Long) = "$mediaType:$tmdbId"
+
+/** Unit separator — safe inside genre and person names, which can contain commas. */
+private const val SEP = "\u001F"
+
+private class DbHelper(ctx: Context) : SQLiteOpenHelper(ctx, "percinel.db", null, 6) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
             """
@@ -58,6 +81,7 @@ private class DbHelper(ctx: Context) : SQLiteOpenHelper(ctx, "percinel.db", null
         )
         db.execSQL("CREATE UNIQUE INDEX idx_uuid ON entries(uuid)")
         db.execSQL("CREATE INDEX idx_watched ON entries(watched_at DESC)")
+        createMeta(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -90,6 +114,29 @@ private class DbHelper(ctx: Context) : SQLiteOpenHelper(ctx, "percinel.db", null
         if (oldVersion < 5) {
             db.execSQL("ALTER TABLE entries ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0")
         }
+        if (oldVersion < 6) {
+            createMeta(db)
+        }
+    }
+
+    // "cast" is a SQL keyword, hence top_cast.
+    private fun createMeta(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS meta(
+                tmdb_id INTEGER NOT NULL,
+                media_type TEXT NOT NULL,
+                runtime_min INTEGER,
+                episodes INTEGER,
+                seasons INTEGER,
+                genres TEXT,
+                director TEXT,
+                top_cast TEXT,
+                fetched_at INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY(tmdb_id, media_type)
+            )
+            """.trimIndent()
+        )
     }
 }
 
@@ -227,6 +274,51 @@ class Repo(ctx: Context) {
         }
     }
 
+    // ---------------------------------------------------------------- TMDB metadata cache
+
+    /** Every cached title, keyed by "mediaType:tmdbId". */
+    fun allMeta(): Map<String, Meta> {
+        val out = HashMap<String, Meta>()
+        helper.readableDatabase.rawQuery("SELECT * FROM meta", null).use { c ->
+            while (c.moveToNext()) {
+                val m = c.toMeta()
+                out[m.key] = m
+            }
+        }
+        return out
+    }
+
+    fun putMeta(m: Meta) {
+        val v = ContentValues().apply {
+            put("tmdb_id", m.tmdbId)
+            put("media_type", m.mediaType)
+            put("runtime_min", m.runtimeMin)
+            put("episodes", m.episodes)
+            put("seasons", m.seasons)
+            put("genres", m.genres.joinToString(SEP))
+            put("director", m.director)
+            put("top_cast", m.cast.joinToString(SEP))
+            put("fetched_at", if (m.fetchedAt == 0L) System.currentTimeMillis() else m.fetchedAt)
+        }
+        helper.writableDatabase.insertWithOnConflict(
+            "meta", null, v, SQLiteDatabase.CONFLICT_REPLACE,
+        )
+    }
+
+    /** Distinct TMDB-linked films in the diary that have no cached metadata yet. */
+    fun filmsMissingMeta(): List<Pair<String, Long>> {
+        val out = ArrayList<Pair<String, Long>>()
+        helper.readableDatabase.rawQuery(
+            """
+            SELECT DISTINCT e.media_type, e.tmdb_id FROM entries e
+            LEFT JOIN meta m ON m.tmdb_id = e.tmdb_id AND m.media_type = e.media_type
+            WHERE e.tmdb_id != 0 AND e.deleted = 0 AND m.tmdb_id IS NULL
+            """.trimIndent(),
+            null,
+        ).use { c -> while (c.moveToNext()) out.add(c.getString(0) to c.getLong(1)) }
+        return out
+    }
+
     /** Attach TMDb identity to an entry (used to enrich a manual entry). Rating/date/notes untouched. */
     fun linkTmdb(id: Long, tmdbId: Long, mediaType: String, title: String, posterPath: String?, year: Int?) {
         val v = ContentValues().apply {
@@ -258,6 +350,25 @@ private fun Cursor.toEntry(): Entry {
         updatedAt = getLong(idx("updated_at")),
         season = idx("season").let { if (isNull(it)) null else getInt(it) },
         deleted = getInt(idx("deleted")) != 0,
+    )
+}
+
+private fun Cursor.toMeta(): Meta {
+    fun idx(name: String) = getColumnIndexOrThrow(name)
+    fun strList(name: String): List<String> = idx(name).let {
+        if (isNull(it)) emptyList() else getString(it).split(SEP).filter(String::isNotBlank)
+    }
+    fun intOrNull(name: String): Int? = idx(name).let { if (isNull(it)) null else getInt(it) }
+    return Meta(
+        tmdbId = getLong(idx("tmdb_id")),
+        mediaType = getString(idx("media_type")),
+        runtimeMin = intOrNull("runtime_min"),
+        episodes = intOrNull("episodes"),
+        seasons = intOrNull("seasons"),
+        genres = strList("genres"),
+        director = idx("director").let { if (isNull(it)) null else getString(it).ifBlank { null } },
+        cast = strList("top_cast"),
+        fetchedAt = getLong(idx("fetched_at")),
     )
 }
 

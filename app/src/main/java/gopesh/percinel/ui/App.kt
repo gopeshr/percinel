@@ -1,6 +1,8 @@
 package gopesh.percinel.ui
 
 import gopesh.percinel.data.Entry
+import gopesh.percinel.data.Insights
+import gopesh.percinel.data.Enrich
 import gopesh.percinel.data.Repo
 import gopesh.percinel.data.Tmdb
 import gopesh.percinel.data.UpdateChecker
@@ -133,6 +135,8 @@ private sealed interface WlScreen {
 
 private sealed interface StScreen {
     data object Home : StScreen
+    data object FilmYear : StScreen
+    data object PosterWall : StScreen
     data class Listing(val filter: StatFilter) : StScreen
     data class Entry(val id: Long) : StScreen
     data class About(val id: Long) : StScreen
@@ -190,6 +194,10 @@ fun App(sharedQuery: String? = null) {
     val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
+                // Keep any placed home-screen widget in step with the diary.
+                gopesh.percinel.WatchWidget.refresh(context)
+            }
             if (event == androidx.lifecycle.Lifecycle.Event.ON_START ||
                 event == androidx.lifecycle.Lifecycle.Event.ON_STOP
             ) {
@@ -394,9 +402,19 @@ private fun WatchlistFlow(
 ) {
     var wscreen by remember { mutableStateOf<WlScreen>(WlScreen.List) }
     var items by remember { mutableStateOf<List<Entry>>(emptyList()) }
+    // Taste-ranked suggestions from this watchlist; the index lets "show me another" walk down.
+    var ranked by remember { mutableStateOf<List<Insights.Pick>>(emptyList()) }
+    var pickIndex by remember { mutableStateOf(0) }
 
     LaunchedEffect(wscreen) {
-        if (wscreen is WlScreen.List) items = withContext(Dispatchers.IO) { repo.watchlist() }
+        if (wscreen is WlScreen.List) {
+            items = withContext(Dispatchers.IO) { repo.watchlist() }
+            ranked = withContext(Dispatchers.IO) {
+                val meta = repo.allMeta()
+                Insights.rankWatchlist(repo.watchlist(), Insights.taste(repo.list(), meta), meta)
+            }
+            pickIndex = 0
+        }
     }
     BackHandler(enabled = wscreen !is WlScreen.List) { wscreen = WlScreen.List }
 
@@ -419,6 +437,9 @@ private fun WatchlistFlow(
                     items = withContext(Dispatchers.IO) { repo.watchlist() }
                 }
             },
+            // Only suggest while there's a real choice to make.
+            pick = ranked.getOrNull(pickIndex)?.takeIf { items.size > 1 },
+            onAnotherPick = { if (ranked.isNotEmpty()) pickIndex = (pickIndex + 1) % ranked.size },
         )
         is WlScreen.About -> AboutScreen(
             repo = repo,
@@ -451,20 +472,40 @@ private fun StatsFlow(
     scope: kotlinx.coroutines.CoroutineScope,
     onMenu: () -> Unit,
 ) {
+    val context = LocalContext.current
     var st by remember { mutableStateOf<StScreen>(StScreen.Home) }
     var all by remember { mutableStateOf<List<Entry>?>(null) }
+    var meta by remember { mutableStateOf<Map<String, gopesh.percinel.data.Meta>>(emptyMap()) }
+    var pendingEnrich by remember { mutableStateOf(0) }
+    var enrichProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     // Where an opened entry should return to (a listing, or the stats home for highlights).
     var entryReturn by remember { mutableStateOf<StScreen>(StScreen.Home) }
 
     LaunchedEffect(st) {
-        if (st is StScreen.Home || st is StScreen.Listing) {
+        if (st is StScreen.Home || st is StScreen.Listing || st is StScreen.FilmYear || st is StScreen.PosterWall) {
             all = withContext(Dispatchers.IO) { repo.list() }
+            meta = withContext(Dispatchers.IO) { repo.allMeta() }
+            pendingEnrich = withContext(Dispatchers.IO) { Enrich.pending(repo) }
+        }
+    }
+
+    fun runEnrich() {
+        if (enrichProgress != null) return
+        scope.launch {
+            enrichProgress = 0 to pendingEnrich
+            Enrich.run(repo) { done, total -> enrichProgress = done to total }
+            meta = withContext(Dispatchers.IO) { repo.allMeta() }
+            pendingEnrich = withContext(Dispatchers.IO) { Enrich.pending(repo) }
+            enrichProgress = null
+            Toast.makeText(context, "Library analysed", Toast.LENGTH_SHORT).show()
         }
     }
 
     BackHandler(enabled = st !is StScreen.Home) {
         st = when (val s = st) {
             is StScreen.Listing -> StScreen.Home
+            StScreen.FilmYear -> StScreen.Home
+            StScreen.PosterWall -> StScreen.Home
             is StScreen.Entry -> entryReturn
             is StScreen.About -> StScreen.Entry(s.id)
             is StScreen.Edit -> StScreen.Entry(s.id)
@@ -476,14 +517,42 @@ private fun StatsFlow(
     FadeThrough(st, label = "stats") { stscr ->
     when (val s = stscr) {
         StScreen.Home -> StatsScreen(
-            entries = all?.let { latestPerFilm(it) },
+            entries = remember(all) { all?.let { latestPerFilm(it) } },
             onMenu = onMenu,
             onOpenList = { st = StScreen.Listing(it) },
             onOpenEntry = { entryReturn = StScreen.Home; st = StScreen.Entry(it) },
+            viewings = all ?: emptyList(),
+            meta = meta,
+            pendingEnrich = pendingEnrich,
+            enrichProgress = enrichProgress,
+            onEnrich = { runEnrich() },
+            onFilmYear = { st = StScreen.FilmYear },
+            onPosterWall = { st = StScreen.PosterWall },
+        )
+        StScreen.FilmYear -> {
+            val viewings = all ?: emptyList()
+            val years = Insights.yearsWithWatches(viewings)
+                .ifEmpty { listOf(Insights.yearOf(System.currentTimeMillis())) }
+            FilmYearScreen(
+                years = years,
+                yearOf = { y -> Insights.filmYear(y, viewings, meta) },
+                name = remember {
+                    context.getSharedPreferences("percinel", android.content.Context.MODE_PRIVATE)
+                        .getString("name", "") ?: ""
+                },
+                needsEnrich = pendingEnrich > 0,
+                onEnrich = { runEnrich() },
+                onBack = { st = StScreen.Home },
+            )
+        }
+        StScreen.PosterWall -> PosterWallScreen(
+            entries = all ?: emptyList(),
+            onBack = { st = StScreen.Home },
+            onOpen = { entryReturn = StScreen.PosterWall; st = StScreen.Entry(it) },
         )
         is StScreen.Listing -> StatListScreen(
             title = statTitle(s.filter),
-            items = statEntries(s.filter, latestPerFilm(all ?: emptyList())),
+            items = remember(all, s.filter) { statEntries(s.filter, latestPerFilm(all ?: emptyList())) },
             onBack = { st = StScreen.Home },
             onOpen = { entryReturn = s; st = StScreen.Entry(it) },
         )

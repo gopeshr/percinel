@@ -1,12 +1,16 @@
 package gopesh.percinel.ui
 
 import gopesh.percinel.data.Details
+import gopesh.percinel.data.Enrich
+import gopesh.percinel.data.Providers
 import gopesh.percinel.data.Entry
 import gopesh.percinel.data.Repo
 import gopesh.percinel.data.SearchResult
 import gopesh.percinel.data.Tmdb
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -22,6 +26,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -84,6 +89,7 @@ fun AboutScreen(repo: Repo, id: Long, onBack: () -> Unit, onMarkWatched: (() -> 
             title = e.title,
             posterPath = e.posterPath,
             year = e.year,
+            onDetails = { d -> Enrich.remember(repo, e.mediaType, e.tmdbId, d) },
         ) {
             if (onMarkWatched != null) {
                 Button(
@@ -176,18 +182,25 @@ private fun DetailBody(
     title: String,
     posterPath: String?,
     year: Int?,
+    onDetails: (Details) -> Unit = {},
     action: @Composable () -> Unit = {},
 ) {
     var details by remember(tmdbId, mediaType) { mutableStateOf<Details?>(null) }
+    var providers by remember(tmdbId, mediaType) { mutableStateOf<Providers?>(null) }
     LaunchedEffect(tmdbId, mediaType) {
         if (tmdbId != 0L) {
             try {
-                details = Tmdb.details(mediaType, tmdbId)
+                val d = Tmdb.details(mediaType, tmdbId)
+                details = d
+                // Browsing warms the stats cache for free.
+                onDetails(d)
             } catch (c: CancellationException) {
                 throw c
             } catch (_: Exception) {
                 // Offline or fetch failed — show what we have.
             }
+            // Availability is a separate call and entirely optional; failure is silent.
+            providers = runCatching { Tmdb.providers(mediaType, tmdbId) }.getOrNull()
         }
     }
 
@@ -248,6 +261,24 @@ private fun DetailBody(
 
         action()
 
+        providers?.let { p ->
+            SectionHeader("Where to watch")
+            Column(Modifier.padding(horizontal = 20.dp)) {
+                if (p.flatrate.isNotEmpty()) {
+                    ProviderRow("Streaming", p.flatrate)
+                }
+                if (p.rent.isNotEmpty()) {
+                    ProviderRow("Rent or buy", p.rent)
+                }
+                Text(
+                    "Availability in ${p.region} · from TMDB",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+        }
+
         details?.overview?.takeIf { it.isNotBlank() }?.let { overview ->
             SectionHeader("Synopsis")
             Text(
@@ -290,6 +321,35 @@ private fun DetailBody(
         }
 
         Spacer(Modifier.height(32.dp))
+    }
+}
+
+/** One labelled group of service names, wrapped as chips. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ProviderRow(label: String, names: List<String>) {
+    Column(Modifier.padding(top = 4.dp)) {
+        Text(
+            label,
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 6.dp),
+        )
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            names.take(8).forEach { n ->
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(8.dp),
+                ) {
+                    Text(
+                        n,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    )
+                }
+            }
+        }
     }
 }
 
