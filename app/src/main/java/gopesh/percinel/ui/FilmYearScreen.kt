@@ -1,8 +1,6 @@
 package gopesh.percinel.ui
 
-import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -45,21 +43,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.asAndroidBitmap
-import androidx.compose.ui.graphics.layer.drawLayer
-import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.FileProvider
 import gopesh.percinel.data.Insights
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.File
 import java.time.Month
 import java.time.format.TextStyle
 import java.util.Locale
@@ -81,9 +71,8 @@ fun FilmYearScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var year by remember { mutableStateOf(years.firstOrNull() ?: 0) }
-    var sharing by remember { mutableStateOf(false) }
     val fy = remember(year) { yearOf(year) }
-    val graphicsLayer = rememberGraphicsLayer()
+    val graphicsLayer = rememberShareLayer()
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -139,15 +128,7 @@ fun FilmYearScreen(
                 return@Column
             }
 
-            // Recorded into a graphics layer so the exact same pixels can be shared as an image.
-            Box(
-                Modifier.drawWithContent {
-                    graphicsLayer.record { this@drawWithContent.drawContent() }
-                    drawLayer(graphicsLayer)
-                },
-            ) {
-                FilmYearCard(fy, name)
-            }
+            Shareable(graphicsLayer) { FilmYearCard(fy, name) }
 
             if (needsEnrich) {
                 Surface(
@@ -175,36 +156,13 @@ fun FilmYearScreen(
                 }
             }
 
-            Button(
-                onClick = {
-                    if (sharing) return@Button
-                    sharing = true
-                    scope.launch {
-                        try {
-                            val bitmap = graphicsLayer.toImageBitmap().asAndroidBitmap()
-                            val uri = withContext(Dispatchers.IO) { saveShareImage(context, bitmap, year) }
-                            context.startActivity(
-                                Intent.createChooser(
-                                    Intent(Intent.ACTION_SEND).apply {
-                                        type = "image/png"
-                                        putExtra(Intent.EXTRA_STREAM, uri)
-                                        putExtra(Intent.EXTRA_TEXT, "My $year in film — logged with percinel")
-                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                    },
-                                    "Share your film year",
-                                ),
-                            )
-                        } catch (_: Exception) {
-                            Toast.makeText(context, "Couldn't make the image", Toast.LENGTH_SHORT).show()
-                        } finally {
-                            sharing = false
-                        }
-                    }
-                },
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth().padding(top = 20.dp).height(50.dp),
-            ) {
-                Text(if (sharing) "Preparing…" else "Share this", fontWeight = FontWeight.Medium, fontSize = 15.sp)
+            Box(Modifier.padding(top = 12.dp)) {
+                ShareMenu(
+                    layer = graphicsLayer,
+                    fileName = "percinel-$year",
+                    caption = "My $year in film — logged with percinel",
+                    chooserTitle = "Share your film year",
+                )
             }
 
             // Supporting detail that doesn't belong on the shareable card.
@@ -317,11 +275,4 @@ private fun CardLine(label: String, value: String) {
             modifier = Modifier.padding(top = 2.dp),
         )
     }
-}
-
-private fun saveShareImage(context: Context, bitmap: Bitmap, year: Int): android.net.Uri {
-    val dir = File(context.cacheDir, "exports").apply { mkdirs() }
-    val file = File(dir, "percinel-$year.png")
-    file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-    return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
 }

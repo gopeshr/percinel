@@ -18,12 +18,18 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -32,6 +38,7 @@ import androidx.compose.ui.unit.sp
 import gopesh.percinel.data.Entry
 import gopesh.percinel.data.Insights
 import gopesh.percinel.data.Tmdb
+import kotlinx.coroutines.launch
 
 /**
  * Every poster you've logged, packed into a grid. Deliberately dense — the appeal is seeing the
@@ -40,8 +47,14 @@ import gopesh.percinel.data.Tmdb
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PosterWallScreen(entries: List<Entry>, onBack: () -> Unit, onOpen: (Long) -> Unit) {
+    val context = LocalContext.current
+    val shareLayer = rememberShareLayer()
     val films = remember(entries) {
         Insights.perFilm(entries).sortedByDescending { it.watchedAt }
+    }
+    val shareName = remember {
+        context.getSharedPreferences("percinel", android.content.Context.MODE_PRIVATE)
+            .getString("name", "") ?: ""
     }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -58,6 +71,16 @@ fun PosterWallScreen(entries: List<Entry>, onBack: () -> Unit, onOpen: (Long) ->
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
+                actions = {
+                    if (films.isNotEmpty()) {
+                        ShareMenu(
+                            layer = shareLayer,
+                            fileName = "percinel-poster-wall",
+                            caption = "${films.size} films watched — logged with percinel",
+                            chooserTitle = "Share your poster wall",
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
                     titleContentColor = MaterialTheme.colorScheme.onBackground,
@@ -71,6 +94,9 @@ fun PosterWallScreen(entries: List<Entry>, onBack: () -> Unit, onOpen: (Long) ->
                 Text("Nothing to show yet", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             return@Scaffold
+        }
+        Box(Modifier.padding(padding)) {
+            OffscreenShareable(shareLayer) { PosterWallShareCard(films, shareName) }
         }
         LazyVerticalGrid(
             columns = GridCells.Adaptive(minSize = 96.dp),

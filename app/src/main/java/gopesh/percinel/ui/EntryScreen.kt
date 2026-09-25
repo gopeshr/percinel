@@ -40,9 +40,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
@@ -52,6 +54,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -66,6 +69,14 @@ fun EntryScreen(
     onLogAnother: (() -> Unit)? = null,
     onOpenViewing: (Long) -> Unit = {},
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val shareLayer = rememberShareLayer()
+    val shareName = remember {
+        context.getSharedPreferences("percinel", android.content.Context.MODE_PRIVATE)
+            .getString("name", "") ?: ""
+    }
+    var sharing by remember { mutableStateOf(false) }
     var entry by remember { mutableStateOf<Entry?>(null) }
     var others by remember { mutableStateOf<List<Entry>>(emptyList()) }
 
@@ -90,6 +101,14 @@ fun EntryScreen(
                     }
                 },
                 actions = {
+                    entry?.let { e ->
+                        ShareMenu(
+                            layer = shareLayer,
+                            fileName = "percinel-watch-${e.id}",
+                            caption = "${e.title} — ${formatRating(e.rating)}/10 · logged with percinel",
+                            chooserTitle = "Share this watch",
+                        )
+                    }
                     TextButton(onClick = onEdit) {
                         Text("Edit", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
                     }
@@ -132,6 +151,9 @@ fun EntryScreen(
                     )
                 }
             }
+
+            // Measured and drawn at full size, placed out of view — this is what Share captures.
+            OffscreenShareable(shareLayer) { WatchShareCard(e, shareName) }
 
             Label("Your rating", top = 28.dp)
             Row(verticalAlignment = Alignment.Bottom) {
