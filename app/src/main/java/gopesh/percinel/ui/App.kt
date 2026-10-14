@@ -1,6 +1,8 @@
 package gopesh.percinel.ui
 
 import gopesh.percinel.data.Entry
+import gopesh.percinel.data.WatchFilter
+import gopesh.percinel.data.Meta
 import gopesh.percinel.data.Insights
 import gopesh.percinel.data.Enrich
 import gopesh.percinel.data.Repo
@@ -46,6 +48,9 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.Badge
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
@@ -168,9 +173,17 @@ fun App(sharedQuery: String? = null) {
     var screen by remember { mutableStateOf<Screen>(Screen.Home) }
     var entries by remember { mutableStateOf<List<Entry>>(emptyList()) }
 
+    // Browse state lives here, above navigation, so a search or filter survives opening a film
+    // and coming back (HomeScreen itself is disposed while another screen is showing).
+    var meta by remember { mutableStateOf<Map<String, Meta>>(emptyMap()) }
+    var browse by remember { mutableStateOf(WatchFilter()) }
+    var sortMode by remember { mutableStateOf(SortMode.RECENT) }
+    var descending by remember { mutableStateOf(true) }
+
     LaunchedEffect(screen, section) {
         if (section == Section.WATCHES && screen is Screen.Home) {
             entries = withContext(Dispatchers.IO) { repo.list() }
+            meta = withContext(Dispatchers.IO) { repo.allMeta() }
         }
     }
 
@@ -241,6 +254,12 @@ fun App(sharedQuery: String? = null) {
                 scope = scope,
                 screen = screen,
                 entries = entries,
+                meta = meta,
+                filter = browse,
+                onFilter = { browse = it },
+                sortMode = sortMode,
+                descending = descending,
+                onSort = { m, d -> sortMode = m; descending = d },
                 onScreen = { screen = it },
                 onEntries = { entries = it },
                 onMenu = { openDrawer() },
@@ -323,6 +342,12 @@ private fun WatchesFlow(
     scope: kotlinx.coroutines.CoroutineScope,
     screen: Screen,
     entries: List<Entry>,
+    meta: Map<String, Meta>,
+    filter: WatchFilter,
+    onFilter: (WatchFilter) -> Unit,
+    sortMode: SortMode,
+    descending: Boolean,
+    onSort: (SortMode, Boolean) -> Unit,
     onScreen: (Screen) -> Unit,
     onEntries: (List<Entry>) -> Unit,
     onMenu: () -> Unit,
@@ -333,6 +358,12 @@ private fun WatchesFlow(
     when (val s = scr) {
         Screen.Home -> HomeScreen(
             entries = entries,
+            meta = meta,
+            filter = filter,
+            onFilter = onFilter,
+            sortMode = sortMode,
+            descending = descending,
+            onSort = onSort,
             onMenu = onMenu,
             update = update,
             onDismissUpdate = onDismissUpdate,
@@ -588,6 +619,12 @@ private fun StatsFlow(
 @Composable
 private fun HomeScreen(
     entries: List<Entry>,
+    meta: Map<String, Meta>,
+    filter: WatchFilter,
+    onFilter: (WatchFilter) -> Unit,
+    sortMode: SortMode,
+    descending: Boolean,
+    onSort: (SortMode, Boolean) -> Unit,
     onMenu: () -> Unit,
     onAdd: () -> Unit,
     onOpen: (Long) -> Unit,
@@ -596,10 +633,7 @@ private fun HomeScreen(
     update: UpdateInfo? = null,
     onDismissUpdate: () -> Unit = {},
 ) {
-    var query by remember { mutableStateOf("") }
-    var sortMode by remember { mutableStateOf(SortMode.RECENT) }
-    var descending by remember { mutableStateOf(true) }
-    var typeFilter by remember { mutableStateOf(TypeFilter.ALL) }
+    var showFilters by remember { mutableStateOf(false) }
     val snackbarState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -628,23 +662,42 @@ private fun HomeScreen(
 
     BackHandler(enabled = selectionMode) { exitSelection() }
 
-    val displayed = remember(entries, query, sortMode, descending, typeFilter) {
-        val filtered = entries
-            .filter { typeFilter.mediaType == null || it.mediaType == typeFilter.mediaType }
-            .filter { query.isBlank() || it.title.contains(query.trim(), ignoreCase = true) }
-        // One card per film: group viewings by TMDb id (manual entries stay standalone).
-        val films = filtered
+    // Options are drawn from the whole library, not the filtered list, so picking one filter
+    // never makes the others' choices vanish.
+    val decadeOptions = remember(entries) { Insights.byDecade(Insights.perFilm(entries)) }
+    val genreOptions = remember(entries, meta) { Insights.topGenres(Insights.perFilm(entries), meta, Int.MAX_VALUE) }
+    val unanalysed = remember(entries, meta) { Insights.perFilm(entries).count { Insights.metaFor(it, meta) == null } }
+
+    // One card per film: group viewings by TMDb id (manual entries stay standalone). Grouping
+    // happens before filtering so a film is judged on the card shown, with its full rewatch count.
+    val allFilms = remember(entries) {
+        entries
             .groupBy { e -> if (e.tmdbId != 0L) "t:${e.mediaType}:${e.tmdbId}" else "m:${e.id}" }
             .map { (key, viewings) ->
                 val ordered = viewings.sortedByDescending { it.watchedAt }
                 FilmGroup(key = key, latest = ordered.first(), viewings = ordered)
             }
+    }
+    val displayed = remember(allFilms, meta, filter, sortMode, descending) {
+        val films = allFilms.filter { filter.matches(it.viewings, Insights.metaFor(it.latest, meta)) }
         val ascending = when (sortMode) {
             SortMode.RECENT -> films.sortedBy { it.latest.watchedAt }
             SortMode.RATING -> films.sortedBy { it.latest.rating }
             SortMode.TITLE -> films.sortedBy { it.latest.title.lowercase() }
         }
         if (descending) ascending.reversed() else ascending
+    }
+
+    if (showFilters) {
+        FilterSheet(
+            filter = filter,
+            onFilter = onFilter,
+            decades = decadeOptions,
+            genres = genreOptions,
+            unanalysed = unanalysed,
+            resultCount = displayed.size,
+            onDismiss = { showFilters = false },
+        )
     }
 
     Scaffold(
@@ -726,17 +779,43 @@ private fun HomeScreen(
                 UpdateBanner(update = update, onDismiss = onDismissUpdate)
             }
             OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                placeholder = { Text("Search your watches") },
+                value = filter.query,
+                onValueChange = { onFilter(filter.copy(query = it)) },
+                placeholder = { Text("Search titles, people, notes") },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                 trailingIcon = {
-                    if (query.isNotEmpty()) {
-                        Icon(
-                            Icons.Default.Close,
-                            contentDescription = "Clear",
-                            modifier = Modifier.clickable { query = "" },
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (filter.query.isNotEmpty()) {
+                            IconButton(onClick = { onFilter(filter.copy(query = "")) }) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear search")
+                            }
+                        }
+                        IconButton(onClick = { showFilters = true }) {
+                            BadgedBox(
+                                badge = {
+                                    if (filter.activeCount > 0) {
+                                        Badge(
+                                            containerColor = MaterialTheme.colorScheme.primary,
+                                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                                        ) { Text(filter.activeCount.toString()) }
+                                    }
+                                },
+                            ) {
+                                Icon(
+                                    Icons.Default.Tune,
+                                    contentDescription = if (filter.activeCount > 0) {
+                                        "Filters, ${filter.activeCount} active"
+                                    } else {
+                                        "Filters"
+                                    },
+                                    tint = if (filter.activeCount > 0) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                )
+                            }
+                        }
                     }
                 },
                 singleLine = true,
@@ -750,8 +829,8 @@ private fun HomeScreen(
             ) {
                 TypeFilter.entries.forEach { f ->
                     FilterChip(
-                        selected = typeFilter == f,
-                        onClick = { typeFilter = f },
+                        selected = filter.mediaType == f.mediaType,
+                        onClick = { onFilter(filter.copy(mediaType = f.mediaType)) },
                         label = { Text(f.label) },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = MaterialTheme.colorScheme.primary,
@@ -763,9 +842,29 @@ private fun HomeScreen(
                 SortControl(
                     current = sortMode,
                     descending = descending,
-                    onSelect = { sortMode = it; descending = it != SortMode.TITLE },
-                    onToggleDir = { descending = !descending },
+                    onSelect = { onSort(it, it != SortMode.TITLE) },
+                    onToggleDir = { onSort(sortMode, !descending) },
                 )
+            }
+
+            // What's narrowing the list right now, and a one-tap way out.
+            if (filter.activeCount > 0) {
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        filterSummary(filter),
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f).clickable(onClickLabel = "Edit filters") { showFilters = true },
+                    )
+                    TextButton(onClick = { onFilter(filter.clearedOfSheet()) }) {
+                        Text("Clear", color = MaterialTheme.colorScheme.primary)
+                    }
+                }
             }
 
             if (displayed.isEmpty()) {
@@ -773,11 +872,17 @@ private fun HomeScreen(
                     Modifier.fillMaxSize().then(rememberBouncy()).verticalScroll(rememberScrollState()),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        "Nothing here matches that",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 200.dp),
-                    )
+                    Column(
+                        Modifier.padding(top = 200.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text("Nothing here matches that", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (filter != WatchFilter()) {
+                            TextButton(onClick = { onFilter(WatchFilter()) }) {
+                                Text("Clear search and filters", color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    }
                 }
             } else {
                 LazyColumn(Modifier.fillMaxSize().then(rememberBouncy()), contentPadding = PaddingValues(vertical = 8.dp)) {

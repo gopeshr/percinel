@@ -46,6 +46,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.Alignment
+import androidx.compose.material3.RadioButton
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -75,6 +80,7 @@ fun SettingsScreen(repo: Repo, onMenu: () -> Unit) {
     var editingName by remember { mutableStateOf(false) }
     var draft by remember { mutableStateOf("") }
     var confirmClear by remember { mutableStateOf(false) }
+    var choosingTheme by remember { mutableStateOf(false) }
     var chooseExport by remember { mutableStateOf(false) }
     var importing by remember { mutableStateOf(false) }
     var updState by remember { mutableStateOf<UpdState>(UpdState.Idle) }
@@ -171,6 +177,13 @@ fun SettingsScreen(repo: Repo, onMenu: () -> Unit) {
                 title = "Your name",
                 subtitle = name.ifBlank { "Not set — tap to add" },
                 onClick = { draft = name; editingName = true },
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+
+            ActionRow(
+                title = "Appearance",
+                subtitle = Appearance.mode.label,
+                onClick = { choosingTheme = true },
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outline)
 
@@ -419,6 +432,35 @@ fun SettingsScreen(repo: Repo, onMenu: () -> Unit) {
                 }) { Text("Turn off") }
             },
             dismissButton = { TextButton(onClick = { confirmSyncOff = false }) { Text("Cancel") } },
+        )
+    }
+
+    if (choosingTheme) {
+        AlertDialog(
+            onDismissRequest = { choosingTheme = false },
+            title = { Text("Appearance") },
+            text = {
+                Column(Modifier.selectableGroup()) {
+                    ThemeMode.entries.forEach { m ->
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .selectable(
+                                    selected = Appearance.mode == m,
+                                    role = Role.RadioButton,
+                                    onClick = { Appearance.set(context, m); choosingTheme = false },
+                                )
+                                .padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = Appearance.mode == m, onClick = null)
+                            Text(m.label, fontSize = 16.sp, modifier = Modifier.padding(start = 12.dp))
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { choosingTheme = false }) { Text("Cancel") } },
         )
     }
 

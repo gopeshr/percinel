@@ -15,6 +15,7 @@ import coil.Coil
 import coil.ImageLoader
 import gopesh.percinel.data.Net
 import gopesh.percinel.ui.App
+import gopesh.percinel.ui.Appearance
 import gopesh.percinel.ui.PercinelTheme
 
 class MainActivity : ComponentActivity() {
@@ -31,6 +32,7 @@ class MainActivity : ComponentActivity() {
                 .okHttpClient { Net.client }
                 .build()
         }
+        Appearance.load(this)
         sharedQuery = extractSharedQuery(intent)
         setContent {
             PercinelTheme {

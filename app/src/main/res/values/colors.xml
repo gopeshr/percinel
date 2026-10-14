@@ -1,5 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="bg">#131313</color>
+    <!-- Default (light) values; values-night overrides for dark. -->
+    <color name="bg">#F5F3EE</color>
+    <!-- Launcher icon stays dark in both themes — it's the brand mark. -->
     <color name="ic_launcher_background">#131313</color>
+    <!-- Dark disc behind the splash icon so the mark reads on a light splash too. -->
+    <color name="splash_icon_bg">#131313</color>
+
+    <color name="widget_bg">#E9E5DB</color>
+    <color name="widget_label">#5C584F</color>
+    <color name="widget_title">#1B1A16</color>
+    <color name="widget_meta">#2E2C27</color>
 </resources>

@@ -49,9 +49,11 @@ Grab the latest APK from the **[Releases page](https://github.com/gopeshr/percin
 - 📋 **Watchlist** for things you plan to see; mark them watched later.
 - 📊 **Stats** — totals, average, this year, rated 9+, highest & lowest — and every card taps through to the exact list.
 - 🔎 **Fast search** via TMDB, with **manual entry** for anything not found.
+- 🎛️ **Search & filter your diary** — by title, director, cast or your notes, and narrow by your rating, release decade and genre.
+- 🌗 **Light & dark** — paper-and-ink or cinema-at-night; follows your phone or pick one in Settings.
 - 📤 **Export** your whole diary to Excel (`.xlsx`) or plain text.
 - ☁️ **Optional cloud backup** to your *own* Google Drive — see below.
-- 🪶 **Tiny & offline-first** — the whole app is ~1.7 MB and works with no connection.
+- 🪶 **Tiny & offline-first** — the whole app is ~2 MB and works with no connection.
 
 ## Privacy & cloud sync
 
@@ -70,7 +72,7 @@ Native Android, deliberately lean:
 - **HttpURLConnection + org.json** for TMDB and Google Drive REST (no Retrofit, no Drive SDK)
 - **Coil** for images
 - **Google Play Services Auth** only for the native account picker
-- R8 + resource shrinking → ~1.7 MB APK
+- R8 + resource shrinking → ~2 MB APK
 
 ## Build from source
 

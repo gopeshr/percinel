@@ -1,15 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Percinel" parent="android:Theme.Material.NoActionBar">
+    <style name="Theme.Percinel" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">@color/bg</item>
         <item name="android:statusBarColor">@color/bg</item>
         <item name="android:navigationBarColor">@color/bg</item>
-        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightStatusBar">true</item>
     </style>
 
-    <style name="Theme.Percinel.Splash" parent="Theme.SplashScreen">
+    <!-- Platform date/time pickers. Both live here (not split by night qualifier) because the
+         in-app Appearance choice can differ from the phone's; Common.kt picks one. -->
+    <style name="Theme.Percinel.Picker.Light" parent="android:Theme.Material.Light.Dialog.Alert">
+        <item name="android:colorAccent">#1B1A16</item>
+        <item name="android:colorBackground">#F5F3EE</item>
+        <item name="android:textColorPrimaryInverse">#F5F3EE</item>
+    </style>
+
+    <style name="Theme.Percinel.Picker.Dark" parent="android:Theme.Material.Dialog.Alert">
+        <item name="android:colorAccent">#E8E4D8</item>
+        <item name="android:colorBackground">#211F1D</item>
+        <item name="android:textColorPrimaryInverse">#1B1A16</item>
+    </style>
+
+    <style name="Theme.Percinel.Splash" parent="Theme.SplashScreen.IconBackground">
         <item name="windowSplashScreenBackground">@color/bg</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="windowSplashScreenIconBackgroundColor">@color/splash_icon_bg</item>
         <item name="postSplashScreenTheme">@style/Theme.Percinel</item>
     </style>
 </resources>

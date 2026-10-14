@@ -25,7 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -95,7 +95,7 @@ fun PosterImage(posterUrl: String?, mediaType: String, modifier: Modifier = Modi
 @Composable
 fun RatingPill(rating: Double) {
     Surface(
-        color = Silver,
+        color = MaterialTheme.colorScheme.primary,
         shape = RoundedCornerShape(999.dp),
         modifier = Modifier.clearAndSetSemantics {
             contentDescription = "Rated ${formatRating(rating)} out of 10"
@@ -103,7 +103,7 @@ fun RatingPill(rating: Double) {
     ) {
         Text(
             formatRating(rating),
-            color = Color(0xFF1B1A16),
+            color = MaterialTheme.colorScheme.onPrimary,
             fontWeight = FontWeight.Bold,
             fontSize = 14.sp,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
@@ -155,11 +155,18 @@ fun RatingField(initial: Double?, onChange: (Double?) -> Unit) {
 @Composable
 fun DateTimeRow(millis: Long, onChange: (Long) -> Unit) {
     val context = LocalContext.current
+    // These are platform dialogs, which don't follow Compose's theme; match them by hand.
+    val dialogTheme = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) {
+        gopesh.percinel.R.style.Theme_Percinel_Picker_Dark
+    } else {
+        gopesh.percinel.R.style.Theme_Percinel_Picker_Light
+    }
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
         Chip(label = "Date", value = formatDate(millis), modifier = Modifier.weight(1f)) {
             val c = Calendar.getInstance().apply { timeInMillis = millis }
             DatePickerDialog(
                 context,
+                dialogTheme,
                 { _, y, m, d ->
                     val nc = Calendar.getInstance().apply {
                         timeInMillis = millis
@@ -174,6 +181,7 @@ fun DateTimeRow(millis: Long, onChange: (Long) -> Unit) {
             val c = Calendar.getInstance().apply { timeInMillis = millis }
             TimePickerDialog(
                 context,
+                dialogTheme,
                 { _, h, min ->
                     val nc = Calendar.getInstance().apply {
                         timeInMillis = millis
